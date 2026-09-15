@@ -1,0 +1,45 @@
+import { createHash, randomBytes } from "node:crypto";
+import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
+
+const envText = readFileSync(new URL("../tunneling/.env.public", import.meta.url), "utf8");
+const base = envText.match(/^MCP_PUBLIC_URL=(.+)$/m)?.[1]?.trim();
+if (!base) throw new Error("MCP_PUBLIC_URL is missing");
+const resource = `${base}/mcp`;
+const key = execFileSync("docker", ["exec", "cokacremote-local", "cat", "/var/lib/cokacremote/oauth-approval-key"], { encoding: "utf8" }).trim();
+const form = (values) => new URLSearchParams(values).toString();
+const request = (url, options = {}) => fetch(url, { redirect: "manual", ...options });
+const check = (condition, message) => { if (!condition) throw new Error(message); };
+
+const health = await (await fetch(`${base}/health`)).json();
+check(health.status === "ok" && health.oauthEnabled === true, "public OAuth health failed");
+const initBody = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "public-verifier", version: "1" } } });
+const denied = await request(resource, { method: "POST", headers: { "content-type": "application/json", accept: "application/json, text/event-stream" }, body: initBody });
+check(denied.status === 401 && denied.headers.get("www-authenticate")?.includes(`${base}/.well-known/oauth-protected-resource/mcp`), "unauthenticated MCP was not rejected");
+const protectedMetadata = await (await fetch(`${base}/.well-known/oauth-protected-resource/mcp`)).json();
+const serverMetadata = await (await fetch(`${base}/.well-known/oauth-authorization-server`)).json();
+check(protectedMetadata.resource === resource && serverMetadata.issuer === `${base}/`, "OAuth discovery mismatch");
+
+const redirectUri = "https://chatgpt.com/connector/oauth/cokacremote-verification";
+const registration = await request(`${base}/register`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ redirect_uris: [redirectUri], token_endpoint_auth_method: "none", grant_types: ["authorization_code", "refresh_token"], response_types: ["code"], client_name: "cokacremote public verification", scope: "mcp:tools" }) });
+check(registration.status === 201, "dynamic client registration failed");
+const { client_id } = await registration.json();
+const verifier = randomBytes(48).toString("base64url");
+const challenge = createHash("sha256").update(verifier).digest("base64url");
+const auth = { client_id, redirect_uri: redirectUri, response_type: "code", code_challenge: challenge, code_challenge_method: "S256", scope: "mcp:tools", state: "verify", resource };
+const rejected = await request(`${base}/authorize`, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: form({ ...auth, access_key: "invalid" }) });
+check(rejected.status === 401, "wrong approval key was not rejected");
+const approved = await request(`${base}/authorize`, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: form({ ...auth, access_key: key }) });
+check(approved.status === 303, "OAuth approval failed");
+const code = new URL(approved.headers.get("location")).searchParams.get("code");
+const tokenResponse = await fetch(`${base}/token`, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: form({ grant_type: "authorization_code", client_id, code, code_verifier: verifier, redirect_uri: redirectUri, resource }) });
+check(tokenResponse.status === 200, "token exchange failed");
+const tokens = await tokenResponse.json();
+const authorized = await fetch(resource, { method: "POST", headers: { authorization: `Bearer ${tokens.access_token}`, "content-type": "application/json", accept: "application/json, text/event-stream" }, body: initBody });
+check(authorized.status === 200, "authenticated MCP initialize failed");
+const refreshedResponse = await fetch(`${base}/token`, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: form({ grant_type: "refresh_token", client_id, refresh_token: tokens.refresh_token, resource }) });
+check(refreshedResponse.status === 200, "refresh rotation failed");
+const refreshed = await refreshedResponse.json();
+check(refreshed.refresh_token !== tokens.refresh_token, "refresh token did not rotate");
+await fetch(`${base}/revoke`, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: form({ client_id, token: refreshed.access_token }) });
+console.log(JSON.stringify({ status: "PASS", publicMcpUrl: resource, health: "PASS", unauthenticatedRejected: "PASS", discovery: "PASS", dcr: "PASS", pkce: "PASS", tokenExchange: "PASS", refreshRotation: "PASS", authenticatedMcp: "PASS", secretsPrinted: false }, null, 2));

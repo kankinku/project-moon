@@ -5,6 +5,7 @@ ARG DEBIAN_FRONTEND=noninteractive
 ARG TIMEZONE=UTC
 ARG COKACREMOTE_REPOSITORY=https://github.com/kstost/cokacremote.git
 ARG COKACREMOTE_REF=main
+ARG COKACREMOTE_REVISION=
 
 ENV TZ=${TIMEZONE} \
     NODE_ENV=production \
@@ -38,6 +39,8 @@ RUN ln -snf /usr/share/zoneinfo/${TZ} /etc/localtime \
 RUN git clone --depth 1 --branch "${COKACREMOTE_REF}" \
         "${COKACREMOTE_REPOSITORY}" /opt/cokacremote \
     && cd /opt/cokacremote \
+    && test -z "${COKACREMOTE_REVISION}" \
+        || test "$(git rev-parse --short=7 HEAD)" = "${COKACREMOTE_REVISION}" \
     && npm ci --include=dev \
     && npm run build \
     && npm prune --omit=dev \
