@@ -1,0 +1,41 @@
+general:
+  - id: GEN-001
+    rule: 변경은 단일 책임을 유지하고, 서로 독립적인 기능은 별도 모듈과 테스트로 분리한다.
+    stacks: [all]
+  - id: GEN-002
+    rule: 외부 프로세스와 파일 입출력 결과는 크기와 시간 한도를 명시하여 무제한 메모리·실행시간 사용을 방지한다.
+    stacks: [all]
+  - id: GEN-003
+    rule: 파괴적 작업은 실패 조건과 상태 전이를 명시적으로 검증하고, 가능한 경우 재현 가능한 증거를 남긴다.
+    stacks: [all]
+typescript:
+  - id: TS-001
+    rule: TypeScript strict 모드를 유지하고 any 사용을 피한다. 외부 입력은 런타임 스키마 또는 명시적 검증을 거친다.
+    stacks: [typescript]
+  - id: TS-002
+    rule: 파일시스템·Git·프로세스 경로와 인자는 문자열 셸 조합보다 인자 배열 기반 API를 우선하여 명령 주입 위험을 줄인다.
+    stacks: [typescript]
+mcp:
+  - id: MCP-001
+    rule: 모든 MCP 도구는 실제 최강 동작에 맞는 readOnly/destructive/idempotent/openWorld 안전 힌트를 제공한다.
+    stacks: [mcp]
+  - id: MCP-002
+    rule: 새 MCP 도구는 tools/list 인벤토리, OAuth 메타데이터, 실제 tools/call 통합 테스트를 함께 갱신한다.
+    stacks: [mcp]
+  - id: MCP-003
+    rule: 대용량 출력은 클라이언트 응답 한도를 고려해 잘라내거나 페이지네이션하고, 잘림 여부를 관찰 가능하게 만든다.
+    stacks: [mcp]
+review:
+  - id: REV-001
+    rule: 코드리뷰는 base/head/merge-base SHA를 고정하고 그 커밋에 없는 미커밋 변경을 리뷰 완료로 간주하지 않는다.
+    stacks: [review]
+  - id: REV-002
+    rule: P1 발견 사항이 남아 있거나 QA가 실패하거나 검토 이후 HEAD가 변경되면 push-ready 상태가 될 수 없다.
+    stacks: [review]
+  - id: REV-003
+    rule: 설계의도·평가기준·PR 설명 등 상위 산출물이 바뀌면 그에 의존하는 리뷰·판정·QA 증거를 무효화한다.
+    stacks: [review]
+security:
+  - id: SEC-001
+    rule: Project Moon은 호스트 전체 권한을 가질 수 있으므로 인증 우회, 경로 제한 약화, 명령 실행 범위 확대는 보안 영향과 테스트를 반드시 동반한다.
+    stacks: [security, mcp]

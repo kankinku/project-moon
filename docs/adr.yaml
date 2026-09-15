@@ -1,0 +1,29 @@
+- id: ADR-001
+  title: Provider-independent code review runtime
+  status: adopted
+  date: 2026-09-16
+  stacks: [review, mcp]
+  context: |
+    MAFIA Code-Review Harness의 핵심 흐름은 설계의도, 평가기준, 근거 기반 리뷰, 리뷰 반영, QA로 구성되어 있지만 원본 구현은 Claude Code의 plugin, Fork(worktree), Sub-agent에 의존한다. Project Moon은 ChatGPT를 포함한 여러 MCP 클라이언트에서 동일한 원격 개발 런타임을 제공하므로 특정 모델 CLI가 설치되지 않아도 동일한 검토 절차와 증거를 유지해야 한다.
+  decision: 리뷰 상태·Git 고정·worktree·산출물·QA는 Project Moon이 담당하고, 추론과 리뷰 문장 생성은 연결된 MCP 클라이언트 또는 향후 provider adapter가 담당한다.
+  consequence: 현재 ChatGPT만으로 리뷰 파이프라인을 사용할 수 있으며 향후 Codex/Claude 어댑터를 추가해도 리뷰 저장 형식과 게이트는 유지된다.
+
+- id: ADR-002
+  title: Immutable pinned review input
+  status: adopted
+  date: 2026-09-16
+  stacks: [review, git]
+  context: |
+    리뷰 시작 후 브랜치가 이동하거나 작업 트리에 미커밋 변경이 존재하면 모델이 실제 push될 코드와 다른 입력을 검토했다고 잘못 판단할 수 있다. 특히 자동 수정 과정에서 검토 대상 SHA와 수정 결과를 혼동하면 QA 통과만으로 리뷰 완료를 선언하는 문제가 생긴다.
+  decision: review_start는 clean working tree만 허용하고 base/head/merge-base SHA를 manifest에 고정한다. HEAD가 이동하면 STALE로 표시한다. writable worktree가 고정 SHA에서 변경되면 fixesPending으로 간주하고 새 커밋에 대한 재리뷰 없이는 push-ready를 허용하지 않는다.
+  consequence: 수정 후에는 새 커밋을 만들고 새로운 review run을 시작해야 하며, 대신 어떤 코드가 어떤 기준으로 검토됐는지 재현 가능하다.
+
+- id: ADR-003
+  title: Local review evidence stays outside normal Git changes
+  status: adopted
+  date: 2026-09-16
+  stacks: [review, git]
+  context: |
+    design-intent, review-comments, QA 로그 같은 실행별 증거를 대상 feature diff에 자동 포함하면 리뷰 시스템 자체가 검토 대상 변경을 오염시키고 지속적으로 dirty working tree를 만든다.
+  decision: 실행별 산출물은 대상 저장소의 .moon/reviews 아래에 저장하되 해당 저장소의 local .git/info/exclude에 .moon/을 등록한다. 프로젝트가 명시적으로 산출물을 버전 관리하려는 경우에만 별도 정책으로 승격한다.
+  consequence: 리뷰 증거는 호스트에 유지되면서 일반 feature diff에는 포함되지 않는다. 장기 중앙 보관은 후속 artifact store 기능으로 확장한다.

@@ -44,3 +44,7 @@ Thumbs.db
 *.swp
 *.swo
 *~
+
+# Project Moon review runtime artifacts
+.moon/
+.project-moon-worktrees/

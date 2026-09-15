@@ -27,6 +27,12 @@ const ALL_TOOLS = [
   "read_process",
   "remove_path",
   "replace_in_file",
+  "review_context",
+  "review_qa",
+  "review_record",
+  "review_start",
+  "review_status",
+  "review_worktree",
   "run_script",
   "stat_path",
   "terminate_process",
@@ -53,6 +59,12 @@ const EXPECTED_ANNOTATIONS = {
   read_process: [true, false, true, false],
   remove_path: [false, true, true, false],
   replace_in_file: [false, true, false, false],
+  review_context: [true, false, true, false],
+  review_qa: [false, true, false, true],
+  review_record: [false, true, false, false],
+  review_start: [false, false, false, false],
+  review_status: [true, false, true, false],
+  review_worktree: [false, true, false, false],
   run_script: [false, true, false, true],
   stat_path: [true, false, true, false],
   terminate_process: [false, true, false, false],
@@ -835,6 +847,200 @@ describe.sequential("all registered MCP tools", () => {
       cwd: testRoot,
       force: true,
     })).toMatchObject({ removed: true });
+  }, 30_000);
+
+  it("runs the provider-independent review harness lifecycle", async () => {
+    const repo = path.join(testRoot, "review-harness-repo");
+    await callOk("make_directory", { path: repo, recursive: true });
+    await callOk("exec_command", {
+      cmd: [
+        "git init -q -b main",
+        "git config user.email e2e@example.invalid",
+        "git config user.name E2E",
+        "printf 'base\\n' > value.txt",
+        "git add value.txt",
+        "git commit -qm base",
+        "git switch -qc feature/review-me",
+        "printf 'feature\\n' > value.txt",
+        "git add value.txt",
+        "git commit -qm feature",
+      ].join(" && "),
+      workdir: repo,
+      yieldTimeMs: 3000,
+    });
+
+    await callOk("exec_command", {
+      cmd: "printf dirty > uncommitted.txt",
+      workdir: repo,
+      yieldTimeMs: 3000,
+    });
+    expect(await callError("review_start", {
+      repoPath: repo,
+      baseBranch: "main",
+      request: "This attempt must be rejected because the tree is dirty.",
+    })).toContain("clean working tree");
+    await callOk("exec_command", {
+      cmd: "rm uncommitted.txt",
+      workdir: repo,
+      yieldTimeMs: 3000,
+    });
+
+    const started = await callOk("review_start", {
+      repoPath: repo,
+      baseBranch: "main",
+      request: "Change value.txt from base to feature and verify the review workflow.",
+    });
+    const runId = String(started.runId);
+    expect(started).toMatchObject({
+      state: "CONTEXT_READY",
+      headBranch: "feature/review-me",
+      changedFiles: ["value.txt"],
+      dirtyAtStart: false,
+    });
+
+    const intentContext = await callOk("review_context", {
+      repoPath: repo,
+      runId,
+      stage: "intent",
+    });
+    expect(String(intentContext.diff)).toContain("+feature");
+    expect(String(intentContext.request)).toContain("review workflow");
+
+    await callOk("review_record", {
+      repoPath: repo,
+      runId,
+      kind: "design_intent",
+      content: "# Design Intent\nReplace the example value.",
+    });
+    await callOk("review_record", {
+      repoPath: repo,
+      runId,
+      kind: "criteria",
+      content: "# Criteria\nThe committed value must be feature.",
+    });
+    await callOk("review_record", {
+      repoPath: repo,
+      runId,
+      kind: "pr_body",
+      content: "# PR\nUpdates the example value.",
+    });
+
+    await callOk("review_record", {
+      repoPath: repo,
+      runId,
+      kind: "criteria",
+      content: "# Criteria\nThe committed value must still be feature after criteria revision.",
+    });
+    expect(await callError("review_record", {
+      repoPath: repo,
+      runId,
+      kind: "review",
+      content: "# Review\nThis review must be rejected because the PR body was invalidated.",
+      p1Findings: 0,
+    })).toContain("requires pr_body");
+    await callOk("review_record", {
+      repoPath: repo,
+      runId,
+      kind: "pr_body",
+      content: "# PR\nRegenerated after criteria revision.",
+    });
+
+    await callOk("review_record", {
+      repoPath: repo,
+      runId,
+      kind: "review",
+      content: "# Review\nOne blocking finding is tracked to exercise the gate.",
+      p1Findings: 1,
+    });
+    await callOk("review_record", {
+      repoPath: repo,
+      runId,
+      kind: "decisions",
+      content: "# Decisions\nThe blocking finding is initially unresolved.",
+      unresolvedP1: 1,
+    });
+
+    const created = await callOk("review_worktree", {
+      repoPath: repo,
+      runId,
+      action: "create",
+      writable: false,
+    });
+    expect(created).toMatchObject({ created: true });
+    expect(await callOk("review_worktree", {
+      repoPath: repo,
+      runId,
+      action: "status",
+    })).toMatchObject({ exists: true });
+
+    const qa = await callOk("review_qa", {
+      repoPath: repo,
+      runId,
+      commands: ["test \"$(cat value.txt)\" = feature", "printf qa-ok"],
+      useWorktree: true,
+      timeoutMs: 3000,
+    });
+    expect(qa).toMatchObject({ passed: true, state: "QA" });
+
+    expect(await callError("review_record", {
+      repoPath: repo,
+      runId,
+      kind: "final_report",
+      content: "# Final Report\nThis must not pass with an unresolved P1.",
+    })).toContain("all P1 findings");
+
+    await callOk("review_record", {
+      repoPath: repo,
+      runId,
+      kind: "decisions",
+      content: "# Decisions\nThe blocking finding is now resolved.",
+      unresolvedP1: 0,
+    });
+    expect(await callError("review_record", {
+      repoPath: repo,
+      runId,
+      kind: "final_report",
+      content: "# Final Report\nChanging decisions invalidated the previous QA evidence.",
+    })).toContain("passing QA run");
+
+    const rerunQa = await callOk("review_qa", {
+      repoPath: repo,
+      runId,
+      commands: ["test \"$(cat value.txt)\" = feature", "printf qa-ok"],
+      useWorktree: true,
+      timeoutMs: 3000,
+    });
+    expect(rerunQa).toMatchObject({ passed: true, state: "QA" });
+
+    await callOk("review_record", {
+      repoPath: repo,
+      runId,
+      kind: "final_report",
+      content: "# Final Report\nReview and fresh QA passed with no unresolved P1 findings.",
+    });
+    expect(await callOk("review_status", { repoPath: repo, runId })).toMatchObject({
+      state: "PASSED",
+      effectiveState: "PASSED",
+      stale: false,
+      readyToPush: true,
+      worktreeExists: true,
+    });
+    expect(await callOk("review_worktree", {
+      repoPath: repo,
+      runId,
+      action: "remove",
+    })).toMatchObject({ removed: true });
+
+    await callOk("exec_command", {
+      cmd: "printf 'new-head\n' >> value.txt && git add value.txt && git commit -qm 'advance reviewed branch'",
+      workdir: repo,
+      yieldTimeMs: 3000,
+    });
+    expect(await callOk("review_status", { repoPath: repo, runId })).toMatchObject({
+      stale: true,
+      effectiveState: "STALE",
+      readyToPush: false,
+    });
   }, 30_000);
 
   it("exercises every published tool through MCP", () => {
