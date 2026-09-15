@@ -74,7 +74,7 @@ describe("client-facing metadata accuracy", () => {
       (client) => client.getServerVersion(),
     );
 
-    expect(serverInfo).toMatchObject({ name: "cokacremote", version: "0.1.0" });
+    expect(serverInfo).toMatchObject({ name: "project-moon", version: "0.1.0" });
     expect(serverInfo?.websiteUrl).not.toBe("https://mcp.example.com");
   });
 

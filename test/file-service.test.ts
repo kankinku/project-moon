@@ -11,7 +11,7 @@ describe("FileService", () => {
   let files: FileService;
 
   beforeEach(async () => {
-    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "remote-dev-mcp-test-"));
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "project-moon-test-"));
     files = new FileService({
       defaultCwd: temporaryDirectory,
       maxChunkBytes: 1024 * 1024,

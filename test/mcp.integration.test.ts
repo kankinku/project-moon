@@ -26,7 +26,7 @@ describe("remote development MCP server", () => {
   let endpoint: URL;
 
   beforeAll(async () => {
-    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "remote-dev-mcp-http-test-"));
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "project-moon-http-test-"));
     config = loadConfig(
       {
         MCP_AUTH_TOKEN: "integration-secret",
@@ -97,7 +97,7 @@ describe("remote development MCP server", () => {
     try {
       expect(transport.sessionId).toBeUndefined();
       expect(client.getServerVersion()).toMatchObject({
-        name: "cokacremote",
+        name: "project-moon",
         version: "0.1.0",
       });
       const tools = await client.listTools();

@@ -13,7 +13,7 @@
 - Public base URL: `{{PUBLIC_BASE_URL}}`
 - Public MCP endpoint: `{{PUBLIC_MCP_URL}}`
 - Cloudflare Tunnel forwards public requests to Nginx at `http://localhost:2999`.
-- Nginx forwards the protected cokacremote paths, including `/mcp`, to `http://127.0.0.1:3000`.
+- Nginx forwards the protected project-moon paths, including `/mcp`, to `http://127.0.0.1:3000`.
 
 ## Instruction Scope
 
@@ -23,14 +23,14 @@
 
 ## Reserved Workmachine Resources
 
-The following resources belong to the workmachine infrastructure and cokacremote. During unrelated application development, never reuse, overwrite, remove, stop, redirect, or otherwise interfere with them:
+The following resources belong to the workmachine infrastructure and project-moon. During unrelated application development, never reuse, overwrite, remove, stop, redirect, or otherwise interfere with them:
 
 - TCP port `2999`: Nginx gateway
-- TCP port `3000`: cokacremote MCP server
-- `/opt/cokacremote`
-- `/var/lib/cokacremote`
-- `/etc/nginx/routes.d/10-cokacremote.conf`
-- Nginx and cokacremote Supervisor processes
+- TCP port `3000`: project-moon MCP server
+- `/opt/project-moon`
+- `/var/lib/project-moon`
+- `/etc/nginx/routes.d/10-project-moon.conf`
+- Nginx and project-moon Supervisor processes
 - `/mcp`
 - `/health`
 - `/.well-known/*`
@@ -39,7 +39,7 @@ The following resources belong to the workmachine infrastructure and cokacremote
 - `/register`
 - `/revoke`
 
-Only modify these resources when the user explicitly requests maintenance of workmachine or cokacremote.
+Only modify these resources when the user explicitly requests maintenance of workmachine or project-moon.
 
 ## Application Services
 
@@ -48,7 +48,7 @@ Only modify these resources when the user explicitly requests maintenance of wor
 - Bind application servers to `127.0.0.1` unless instructed otherwise.
 - Store application route files in `/shared/nginx/routes.d/`.
 - Use one route file and one unique internal port per application.
-- Do not modify `/etc/nginx/routes.d/10-cokacremote.conf`.
+- Do not modify `/etc/nginx/routes.d/10-project-moon.conf`.
 
 ## Nginx Changes
 

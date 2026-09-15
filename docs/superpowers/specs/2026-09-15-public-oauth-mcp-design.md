@@ -2,11 +2,11 @@
 
 ## Goal
 
-Expose the existing Docker-isolated `cokacremote` through an HTTPS URL, keep Nginx as the application reverse proxy, and require the built-in OAuth 2.1 authorization server for every MCP tool call.
+Expose the existing Docker-isolated `project-moon` through an HTTPS URL, keep Nginx as the application reverse proxy, and require the built-in OAuth 2.1 authorization server for every MCP tool call.
 
 ## Chosen approach
 
-Use a Cloudflare Quick Tunnel because no owned public domain or Cloudflare account credential is available. `cloudflared` runs as a second container and forwards its generated HTTPS hostname to the `workmachine` Nginx listener. Nginx remains the single application ingress and proxies `/mcp`, OAuth discovery, registration, authorization, token, revocation, and health routes to `cokacremote`.
+Use a Cloudflare Quick Tunnel because no owned public domain or Cloudflare account credential is available. `cloudflared` runs as a second container and forwards its generated HTTPS hostname to the `workmachine` Nginx listener. Nginx remains the single application ingress and proxies `/mcp`, OAuth discovery, registration, authorization, token, revocation, and health routes to `project-moon`.
 
 The Quick Tunnel hostname is ephemeral. It remains usable while the `cloudflared` container keeps its current tunnel session. Restarting or recreating that container can assign a new hostname; the bootstrap script must then update `MCP_PUBLIC_URL` and recreate only `workmachine`.
 
@@ -14,7 +14,7 @@ The Quick Tunnel hostname is ephemeral. It remains usable while the `cloudflared
 
 `MCP_ALLOW_NO_AUTH=false`, `MCP_OAUTH_ENABLED=true`, and `MCP_AUTH_TOKEN` remains empty so there is no static Bearer bypass. The built-in OAuth server uses DCR, Authorization Code with PKCE S256, the `mcp:tools` scope, refresh-token rotation, and resource audience validation.
 
-The OAuth approval key remains in `/var/lib/cokacremote/oauth-approval-key` on the named Docker state volume. A local helper prints it on demand; the key is never committed or copied into the public configuration.
+The OAuth approval key remains in `/var/lib/project-moon/oauth-approval-key` on the named Docker state volume. A local helper prints it on demand; the key is never committed or copied into the public configuration.
 
 ## Trust boundary
 

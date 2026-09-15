@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add an opt-in NVIDIA GPU path that exposes the RTX 5060 Ti to `cokacremote-local`, verifies `nvidia-smi`, and preserves the existing CPU deployment and security boundaries.
+**Goal:** Add an opt-in NVIDIA GPU path that exposes the RTX 5060 Ti to `project-moon-local`, verifies `nvidia-smi`, and preserves the existing CPU deployment and security boundaries.
 
 **Architecture:** Keep the base Compose file CPU-portable and merge a focused GPU overlay only when `Start-PublicMcp.ps1 -Gpu` is used. Perform host and Docker preflight checks before container mutation, then use a separate structured verifier for live container evidence.
 
@@ -26,7 +26,7 @@ Expected: FAIL because `tunneling/docker-compose.gpu.yml` does not exist.
 - [ ] **Step 2: Confirm the running container has no GPU request**
 
 ```powershell
-docker inspect cokacremote-local --format '{{json .HostConfig.DeviceRequests}}'
+docker inspect project-moon-local --format '{{json .HostConfig.DeviceRequests}}'
 ```
 
 Expected: `null`.
@@ -84,7 +84,7 @@ Before the first `docker compose up`, run host `nvidia-smi`, confirm `docker inf
 After OAuth health succeeds, run:
 
 ```powershell
-docker exec cokacremote-local nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv,noheader
+docker exec project-moon-local nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv,noheader
 ```
 
 Expected: exit zero in GPU mode. Emit `GPU_ENABLED=true`; CPU mode emits `GPU_ENABLED=false`.
@@ -154,7 +154,7 @@ Expected: public MCP URL, OAuth enabled, and GPU enabled.
 
 ```powershell
 .\Test-Gpu.ps1
-docker exec cokacremote-local nvidia-smi
+docker exec project-moon-local nvidia-smi
 ```
 
 Expected: PASS and RTX 5060 Ti details.
@@ -170,7 +170,7 @@ Expected: all OAuth and authenticated MCP checks PASS with `secretsPrinted: fals
 - [ ] **Step 4: Run the Linux regression suite**
 
 ```powershell
-docker run --rm --entrypoint /bin/bash cokacremote-local:0.1.0 -lc 'cd /opt/cokacremote && npm ci --include=dev && npm test && npm run typecheck && npm run build && npm audit --omit=dev'
+docker run --rm --entrypoint /bin/bash project-moon-local:0.1.0 -lc 'cd /opt/project-moon && npm ci --include=dev && npm test && npm run typecheck && npm run build && npm audit --omit=dev'
 ```
 
 Expected: 39 tests pass, typecheck/build exit zero, zero production vulnerabilities.

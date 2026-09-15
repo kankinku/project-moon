@@ -155,7 +155,7 @@ export function loadConfig(
     oauthResourceUrl,
     oauthStateFile: path.resolve(
       env.MCP_OAUTH_STATE_FILE?.trim() ||
-        path.join(processCwd, ".remote-dev-mcp-oauth-state.json"),
+        path.join(processCwd, ".project-moon-oauth-state.json"),
     ),
     oauthAccessTokenTtlSeconds: parseInteger(
       env.MCP_OAUTH_ACCESS_TOKEN_TTL_SECONDS,

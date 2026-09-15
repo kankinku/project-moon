@@ -11,7 +11,7 @@ WORKMACHINE_IMAGE="workmachine-backup:latest"
 CLOUDFLARED_IMAGE="cloudflared-backup:latest"
 HELPER_IMAGE="alpine:3.22"
 
-STATE_VOLUME="workmachine_cokacremote-state"
+STATE_VOLUME="workmachine_project-moon-state"
 SHARED_SOURCE=""
 
 TEMP_ROOT=""
@@ -61,8 +61,8 @@ usage() {
   echo "  $0 restore <백업 디렉터리> <공유 디렉터리>  # 새 컴퓨터에서 전체 복원"
   echo
   echo "예:"
-  echo "  $0 backup $HOME/Desktop $HOME/shared/cokacdircom"
-  echo "  $0 restore $HOME/Desktop $HOME/shared/cokacdircom"
+  echo "  $0 backup $HOME/Desktop $HOME/shared/project-moon"
+  echo "  $0 restore $HOME/Desktop $HOME/shared/project-moon"
 }
 
 make_temp_root() {
@@ -206,15 +206,15 @@ validate_workmachine_mounts() {
 
   mount_count="$(docker inspect -f '{{len .Mounts}}' "$WORKMACHINE_CONTAINER")"
   [ "$mount_count" = "2" ] \
-    || die "$WORKMACHINE_CONTAINER의 mount 수가 예상과 다릅니다. /shared와 /var/lib/cokacremote 외의 데이터는 백업되지 않습니다: $mount_count"
+    || die "$WORKMACHINE_CONTAINER의 mount 수가 예상과 다릅니다. /shared와 /var/lib/project-moon 외의 데이터는 백업되지 않습니다: $mount_count"
 
   state_mount="$(
     docker inspect -f \
-      '{{range .Mounts}}{{if eq .Destination "/var/lib/cokacremote"}}{{printf "%s|%s|%t" .Type .Name .RW}}{{end}}{{end}}' \
+      '{{range .Mounts}}{{if eq .Destination "/var/lib/project-moon"}}{{printf "%s|%s|%t" .Type .Name .RW}}{{end}}{{end}}' \
       "$WORKMACHINE_CONTAINER"
   )"
   [ "$state_mount" = "volume|$STATE_VOLUME|true" ] \
-    || die "$WORKMACHINE_CONTAINER의 /var/lib/cokacremote mount가 예상과 다릅니다: $state_mount"
+    || die "$WORKMACHINE_CONTAINER의 /var/lib/project-moon mount가 예상과 다릅니다: $state_mount"
 
   shared_source_canonical="$(cd "$SHARED_SOURCE" && pwd -P)"
   shared_mount="$(
@@ -342,7 +342,7 @@ services:
     working_dir: /shared
     stop_grace_period: 30s
     volumes:
-      - workmachine_cokacremote-state:/var/lib/cokacremote
+      - workmachine_project-moon-state:/var/lib/project-moon
       - type: bind
         source: ${WORKMACHINE_SHARED_SOURCE:?WORKMACHINE_SHARED_SOURCE is required}
         target: /shared
@@ -357,9 +357,9 @@ services:
         condition: service_healthy
 
 volumes:
-  workmachine_cokacremote-state:
+  workmachine_project-moon-state:
     external: true
-    name: workmachine_cokacremote-state
+    name: workmachine_project-moon-state
 YAML
 }
 
@@ -458,17 +458,17 @@ backup() {
   docker save -o "$WORKDIR/cloudflared-image.tar" "$CLOUDFLARED_IMAGE"
   docker save -o "$WORKDIR/alpine-image.tar" "$HELPER_IMAGE"
 
-  echo "[5/8] /var/lib/cokacremote 볼륨 백업"
+  echo "[5/8] /var/lib/project-moon 볼륨 백업"
   docker run --rm \
     -v "$STATE_VOLUME:/data:ro" \
     -v "$WORKDIR:/backup" \
     "$HELPER_IMAGE" \
-    tar czpf /backup/cokacremote-state.tar.gz -C /data .
+    tar czpf /backup/project-moon-state.tar.gz -C /data .
 
   echo "[6/8] 설정/검증 정보 저장"
   docker inspect "$WORKMACHINE_CONTAINER" > "$WORKDIR/workmachine-inspect.json"
   docker inspect "$CLOUDFLARED_CONTAINER" > "$WORKDIR/cloudflared-inspect.json"
-  docker volume inspect "$STATE_VOLUME" > "$WORKDIR/cokacremote-state-volume-inspect.json"
+  docker volume inspect "$STATE_VOLUME" > "$WORKDIR/project-moon-state-volume-inspect.json"
   docker image inspect -f '{{.Os}}/{{.Architecture}}' "$WORKMACHINE_IMAGE" \
     > "$WORKDIR/platform.txt"
 
@@ -578,8 +578,8 @@ restore() {
     || die "cloudflared-image.tar가 백업 안에 없습니다."
   [ -f "$WORKDIR/alpine-image.tar" ] \
     || die "alpine-image.tar가 백업 안에 없습니다."
-  [ -f "$WORKDIR/cokacremote-state.tar.gz" ] \
-    || die "cokacremote-state.tar.gz가 백업 안에 없습니다."
+  [ -f "$WORKDIR/project-moon-state.tar.gz" ] \
+    || die "project-moon-state.tar.gz가 백업 안에 없습니다."
   [ -f "$WORKDIR/compose.restore.yml" ] \
     || die "compose.restore.yml이 백업 안에 없습니다."
   [ -f "$WORKDIR/mcp-public-url.txt" ] \
@@ -619,7 +619,7 @@ restore() {
   docker run --rm --pull never \
     -v "$WORKDIR:/backup:ro" \
     "$HELPER_IMAGE" \
-    tar tzf /backup/cokacremote-state.tar.gz >/dev/null
+    tar tzf /backup/project-moon-state.tar.gz >/dev/null
 
   echo "[7/11] 기존 workmachine 환경 제거"
   if docker container inspect "$CLOUDFLARED_CONTAINER" >/dev/null 2>&1; then
@@ -636,15 +636,15 @@ restore() {
       || die "$STATE_VOLUME 볼륨을 삭제할 수 없습니다. 다른 컨테이너에서 사용 중인지 확인하세요."
   fi
 
-  echo "[8/11] /var/lib/cokacremote 볼륨 생성"
+  echo "[8/11] /var/lib/project-moon 볼륨 생성"
   docker volume create "$STATE_VOLUME" >/dev/null
 
-  echo "[9/11] /var/lib/cokacremote 내용 복원"
+  echo "[9/11] /var/lib/project-moon 내용 복원"
   docker run --rm \
     -v "$STATE_VOLUME:/data" \
     -v "$WORKDIR:/backup:ro" \
     "$HELPER_IMAGE" \
-    tar xzpf /backup/cokacremote-state.tar.gz -C /data
+    tar xzpf /backup/project-moon-state.tar.gz -C /data
 
   echo "[10/11] workmachine + cloudflared를 Compose 프로젝트로 시작"
   WORKMACHINE_SHARED_SOURCE="$SHARED_SOURCE" \

@@ -1,5 +1,5 @@
 [Unit]
-Description=cokacremote MCP Server
+Description=project-moon MCP Server
 After=network-online.target
 Wants=network-online.target
 
@@ -7,9 +7,9 @@ Wants=network-online.target
 Type=simple
 User=root
 Group=root
-WorkingDirectory=/opt/remote-dev-mcp
-EnvironmentFile=/etc/remote-dev-mcp.env
-ExecStart=/usr/bin/node /opt/remote-dev-mcp/dist/src/server.js
+WorkingDirectory=/opt/project-moon
+EnvironmentFile=/etc/project-moon.env
+ExecStart=/usr/bin/node /opt/project-moon/dist/src/server.js
 Restart=always
 RestartSec=3
 KillMode=control-group

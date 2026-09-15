@@ -108,7 +108,7 @@ export async function startHttpServer(
         authorization_servers: [oauthProvider.issuerUrl.href],
         scopes_supported: [...OAUTH_SCOPES],
         bearer_methods_supported: ["header"],
-        resource_name: "cokacremote",
+        resource_name: "project-moon",
       });
     });
     const oauthRouterOptions = {
@@ -116,7 +116,7 @@ export async function startHttpServer(
       issuerUrl: oauthProvider.issuerUrl,
       resourceServerUrl: oauthProvider.resourceUrl,
       scopesSupported: [...OAUTH_SCOPES],
-      resourceName: "cokacremote",
+      resourceName: "project-moon",
     } satisfies AuthRouterOptions;
     const oauthMetadata = {
       ...createOAuthMetadata(oauthRouterOptions),
@@ -142,7 +142,7 @@ export async function startHttpServer(
   app.get("/health", (_request, response) => {
     response.json({
       status: "ok",
-      service: "cokacremote",
+      service: "project-moon",
       version: "0.1.0",
       transportMode: "stateless-json",
       activeMcpSessions: 0,

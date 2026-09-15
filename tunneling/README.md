@@ -1,6 +1,6 @@
 # workmachine
 
-A long-running Ubuntu development machine controlled through cokacremote MCP.
+A long-running Ubuntu development machine controlled through project-moon MCP.
 
 On first start, workmachine creates `/shared/AGENTS.md` from `templates/AGENTS.md` if the file does not already exist. Existing instructions are never overwritten.
 
@@ -26,7 +26,6 @@ SHARED_PATH=/Users/yourname/Documents/workspace
 MCP_PUBLIC_URL=https://example.com
 CLOUDFLARE_TUNNEL_TOKEN=replace-with-your-real-tunnel-token
 TZ=Asia/Seoul
-COKACREMOTE_REF=main
 ```
 
 This example creates the public MCP endpoint `https://example.com/mcp`. Use an absolute path for `SHARED_PATH`, do not add a trailing slash to `MCP_PUBLIC_URL`, and never commit the populated `.env` file.
@@ -56,7 +55,7 @@ docker compose -p workmachine build --no-cache --pull
 docker compose -p workmachine up -d --force-recreate
 ```
 
-This keeps the existing `cokacremote-state` volume and its OAuth state.
+This keeps the existing `project-moon-state` volume and its OAuth state.
 
 To run from any directory, specify both the Compose file and environment file:
 
@@ -64,12 +63,12 @@ To run from any directory, specify both the Compose file and environment file:
 docker compose -p workmachine -f /absolute/path/to/workmachine/docker-compose.yml --env-file /absolute/path/to/workmachine/.env up -d --build
 ```
 
-Nginx listens on port 2999 and forwards cokacremote routes to port 3000.
+Nginx listens on port 2999 and forwards project-moon routes to port 3000.
 
 Read the generated OAuth approval key:
 
 ```bash
-docker compose -p workmachine exec workmachine cat /var/lib/cokacremote/oauth-approval-key
+docker compose -p workmachine exec workmachine cat /var/lib/project-moon/oauth-approval-key
 ```
 
 ## Add an application route

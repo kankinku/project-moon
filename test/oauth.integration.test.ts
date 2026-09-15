@@ -39,7 +39,7 @@ describe("OAuth 2.1 MCP authorization", () => {
   let resourceUrl: string;
 
   beforeAll(async () => {
-    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "remote-dev-mcp-oauth-test-"));
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "project-moon-oauth-test-"));
     const stateDirectory = path.join(temporaryDirectory, "oauth");
     await mkdir(stateDirectory, { mode: 0o755 });
     stateFile = path.join(stateDirectory, "state.json");
@@ -96,7 +96,7 @@ describe("OAuth 2.1 MCP authorization", () => {
         resource: resourceUrl,
         authorization_servers: [`${baseUrl}/`],
         scopes_supported: ["mcp:tools"],
-        resource_name: "cokacremote",
+        resource_name: "project-moon",
       });
     }
 

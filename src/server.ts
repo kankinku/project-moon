@@ -11,7 +11,7 @@ async function main(): Promise<void> {
     ? `${config.publicUrl}${config.endpoint}`
     : `http://${config.host}:${config.port}${config.endpoint}`;
 
-  console.log(`cokacremote listening at ${endpointUrl}`);
+  console.log(`project-moon listening at ${endpointUrl}`);
   console.log(`default cwd: ${config.defaultCwd}`);
   console.log("execution mode: unrestricted host access");
   console.log(
@@ -45,6 +45,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((error) => {
-  console.error("cokacremote failed to start:", errorMessage(error));
+  console.error("project-moon failed to start:", errorMessage(error));
   process.exitCode = 1;
 });

@@ -2,11 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Run cokacremote in Docker with only a dedicated Desktop workspace mounted and a loopback-only HTTP endpoint for OpenAI Secure MCP Tunnel.
+**Goal:** Run project-moon in Docker with only a dedicated Desktop workspace mounted and a loopback-only HTTP endpoint for OpenAI Secure MCP Tunnel.
 
 **Architecture:** Docker Compose builds the repository's existing `tunneling/Dockerfile` and starts one `workmachine` container. The container exposes TCP 2999 only on `127.0.0.1`; it receives no Docker socket and mounts only `shared/` at `/shared`. Built-in authentication is disabled only because no public ingress exists; OpenAI Secure MCP Tunnel provides the remote connection boundary.
 
-**Tech Stack:** Docker Desktop, Docker Compose, Ubuntu 24.04, Nginx, Node.js 22, cokacremote, OpenAI Secure MCP Tunnel.
+**Tech Stack:** Docker Desktop, Docker Compose, Ubuntu 24.04, Nginx, Node.js 22, project-moon, OpenAI Secure MCP Tunnel.
 
 ---
 
@@ -22,7 +22,7 @@ Create `tunneling/docker-compose.local.yml` with a `workmachine` service built f
 
 - [ ] **Step 2: Define the non-secret local environment template**
 
-Create `tunneling/.env.local.example` with `TZ=Asia/Seoul`, `COKACREMOTE_REF=main`, and `WORKMACHINE_IMAGE=cokacremote-local:0.1.0`. Do not include tunnel credentials or API keys.
+Create `tunneling/.env.local.example` with `TZ=Asia/Seoul`, `WORKMACHINE_IMAGE=project-moon-local:0.1.0`. Do not include tunnel credentials or API keys.
 
 - [ ] **Step 3: Validate Compose rendering**
 
@@ -60,7 +60,7 @@ Expected: `workmachine` becomes healthy and no port other than loopback 2999 is 
 
 - [ ] **Step 3: Verify health and containment**
 
-Run: `curl.exe -fsS http://127.0.0.1:2999/health` and `docker inspect cokacremote-local --format '{{json .HostConfig.Binds}}'`.
+Run: `curl.exe -fsS http://127.0.0.1:2999/health` and `docker inspect project-moon-local --format '{{json .HostConfig.Binds}}'`.
 
 Expected: health JSON reports `status: ok`; inspection reports exactly the Desktop `shared` bind and no Docker socket bind.
 

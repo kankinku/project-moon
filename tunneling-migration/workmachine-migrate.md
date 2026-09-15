@@ -24,7 +24,7 @@ chmod +x workmachine-migrate.sh
 ```bash
 ./workmachine-migrate.sh backup \
   $HOME/Desktop \
-  $HOME/shared/cokacdircom
+  $HOME/shared/project-moon
 ```
 
 백업 디렉터리에 다음 두 파일이 생성됩니다.
@@ -56,7 +56,7 @@ workmachine-full-backup.tar.gz.sha256
 ```bash
 ./workmachine-migrate.sh restore \
   $HOME/Desktop \
-  $HOME/shared/cokacdircom
+  $HOME/shared/project-moon
 ```
 
 복원 대상에 기존 컨테이너나 볼륨이 있으면 삭제 확인을 요청합니다. 계속하려면 정확히 `RESTORE`를 입력해야 합니다.

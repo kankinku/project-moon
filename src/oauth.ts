@@ -462,7 +462,7 @@ function renderAuthorizationPage(
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>cokacremote 승인</title>
+  <title>project-moon 승인</title>
   <style>
     :root { color-scheme: dark; font-family: ui-sans-serif, system-ui, sans-serif; }
     body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #0b1020; color: #e8ecf5; }
@@ -479,7 +479,7 @@ function renderAuthorizationPage(
 </head>
 <body>
   <main>
-    <h1>cokacremote 연결 승인</h1>
+    <h1>project-moon 연결 승인</h1>
     <p><strong>${escapeHtml(clientName)}</strong>이 이 서버의 MCP 도구 사용 권한을 요청했습니다.</p>
     <p class="warning">승인하면 연결된 MCP 클라이언트가 이 서버에서 root 권한으로 명령을 실행하고 파일을 변경할 수 있습니다.</p>
     ${invalidKey ? '<p class="error">인증키가 올바르지 않습니다.</p>' : ""}

@@ -61,7 +61,7 @@ export async function runScript(
 ): Promise<RunScriptResult> {
   const runtime = runtimeDefinition(request);
   const temporaryDirectory = await mkdtemp(
-    path.join(os.tmpdir(), "remote-dev-mcp-script-"),
+    path.join(os.tmpdir(), "project-moon-script-"),
   );
   const scriptPath = path.join(temporaryDirectory, `script${runtime.extension}`);
   await writeFile(scriptPath, request.script, { mode: 0o700 });

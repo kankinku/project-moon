@@ -1,10 +1,10 @@
 services:
   workmachine:
     build:
-      context: .
+      context: ..
+      dockerfile: tunneling/Dockerfile
       args:
         TIMEZONE: "${TZ:-UTC}"
-        COKACREMOTE_REF: "${COKACREMOTE_REF:-main}"
     image: "${WORKMACHINE_IMAGE:-workmachine:local}"
     container_name: workmachine
     hostname: workmachine
@@ -21,8 +21,8 @@ services:
         source: "${SHARED_PATH:?Set SHARED_PATH in .env}"
         target: /shared
       - type: volume
-        source: cokacremote-state
-        target: /var/lib/cokacremote
+        source: project-moon-state
+        target: /var/lib/project-moon
     stop_grace_period: 30s
 
   cloudflared:
@@ -41,4 +41,4 @@ services:
       - "${CLOUDFLARE_TUNNEL_TOKEN:?Set CLOUDFLARE_TUNNEL_TOKEN in .env}"
 
 volumes:
-  cokacremote-state:
+  project-moon-state:

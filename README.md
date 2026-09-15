@@ -1,17 +1,17 @@
-# cokacremote
+# Project Moon
 
-`cokacremote` lets ChatGPT or another MCP client work directly on a remote Linux server.
+`Project Moon` lets ChatGPT or another MCP client work directly on a remote Linux server.
 
 In simple terms, it gives an AI client tools to do things you would normally do over SSH: run shell commands, inspect logs, edit files, install packages, build projects, and manage services.
 
-MCP stands for **Model Context Protocol**. It is a standard that lets an AI client call tools provided by another program. You do not need to understand the protocol internals to use `cokacremote`.
+MCP stands for **Model Context Protocol**. It is a standard that lets an AI client call tools provided by another program. You do not need to understand the protocol internals to use `project-moon`.
 
 ```text
 ChatGPT or another MCP client
             |
             | MCP over HTTPS
             v
-       cokacremote
+       project-moon
             |
             v
        Linux server
@@ -22,18 +22,18 @@ ChatGPT or another MCP client
        `- manage processes and services
 ```
 
-You can run `cokacremote` continuously on a VPS or EC2 instance and connect to it remotely over MCP Streamable HTTP.
+You can run `Project Moon` continuously on a VPS or EC2 instance and connect to it remotely over MCP Streamable HTTP.
 
 > [!WARNING]
-> `cokacremote` is intentionally powerful. It has no sandbox, command allowlist, execution approval, or path restrictions. If the service runs as `root`, an authenticated MCP client can change or delete anything on the server. Use HTTPS, strong authentication, and only connect trusted clients.
+> `project-moon` is intentionally powerful. It has no sandbox, command allowlist, execution approval, or path restrictions. If the service runs as `root`, an authenticated MCP client can change or delete anything on the server. Use HTTPS, strong authentication, and only connect trusted clients.
 
 ## Quick start
 
 If you already have a Linux server and Node.js 22+, the shortest local test is:
 
 ```bash
-git clone https://github.com/kstost/cokacremote.git
-cd cokacremote
+git clone https://github.com/kankinku/project-moon.git
+cd project-moon
 npm install
 npm run build
 
@@ -71,10 +71,10 @@ Internally, these actions are provided through 20 MCP tools for shell execution,
 
 ## How it works
 
-With `cokacremote`:
+With `Project Moon`:
 
 1. An MCP client sends an MCP request over HTTPS.
-2. `cokacremote` checks authentication.
+2. `Project Moon` checks authentication.
 3. It runs the requested tool directly on the host server.
 4. The command output or file-operation result is returned to the client.
 
@@ -179,7 +179,7 @@ MCP_OAUTH_APPROVAL_KEY=<separate-value-generated-with-openssl-rand-hex-32>
 MCP_PUBLIC_URL=https://mcp.example.com
 MCP_OAUTH_ISSUER=https://mcp.example.com
 MCP_OAUTH_RESOURCE=https://mcp.example.com/mcp
-MCP_OAUTH_STATE_FILE=/var/lib/remote-dev-mcp/oauth-state.json
+MCP_OAUTH_STATE_FILE=/var/lib/project-moon/oauth-state.json
 ```
 
 When enabled, the server provides:
@@ -219,31 +219,31 @@ OpenAI's current remote MCP authentication requirements are documented in [MCP s
 
 ## VPS/EC2 deployment
 
-The following example installs the server under `/opt/remote-dev-mcp` on an Ubuntu-based system. The service unit remains named `remote-dev-mcp.service` for backward compatibility.
+The following example installs the server under `/opt/project-moon` on an Ubuntu-based system. The service unit remains named `project-moon.service` for backward compatibility.
 
 ```bash
-sudo mkdir -p /opt/remote-dev-mcp
-sudo cp -a package.json package-lock.json tsconfig.json src deploy /opt/remote-dev-mcp/
-cd /opt/remote-dev-mcp
+sudo mkdir -p /opt/project-moon
+sudo cp -a package.json package-lock.json tsconfig.json src deploy /opt/project-moon/
+cd /opt/project-moon
 sudo npm ci
 sudo npm run build
 sudo npm prune --omit=dev
 
-sudo install -d -m 0700 /var/lib/remote-dev-mcp
+sudo install -d -m 0700 /var/lib/project-moon
 
-sudo cp deploy/remote-dev-mcp.env.example /etc/remote-dev-mcp.env
-sudo chmod 600 /etc/remote-dev-mcp.env
-sudo editor /etc/remote-dev-mcp.env
+sudo cp deploy/project-moon.env.example /etc/project-moon.env
+sudo chmod 600 /etc/project-moon.env
+sudo editor /etc/project-moon.env
 
-sudo cp deploy/remote-dev-mcp.service /etc/systemd/system/
+sudo cp deploy/project-moon.service /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable --now remote-dev-mcp
-sudo systemctl status remote-dev-mcp
+sudo systemctl enable --now project-moon
+sudo systemctl status project-moon
 ```
 
 If `/usr/bin/node` is not the actual Node.js path, update `ExecStart` in the systemd unit. Use `which node` to find the correct path.
 
-HTTPS is required when exposing the server to the public internet. Update the domain and certificate paths in the [Nginx example](deploy/nginx.remote-dev-mcp.conf), prepare a valid certificate, and then enable the configuration. It is recommended to bind the Node.js server to `127.0.0.1` and expose only ports 80/443 externally. Use a sufficiently long proxy read timeout so long-running tool calls are not terminated by the proxy first.
+HTTPS is required when exposing the server to the public internet. Update the domain and certificate paths in the [Nginx example](deploy/nginx.project-moon.conf), prepare a valid certificate, and then enable the configuration. It is recommended to bind the Node.js server to `127.0.0.1` and expose only ports 80/443 externally. Use a sufficiently long proxy read timeout so long-running tool calls are not terminated by the proxy first.
 
 Set `MCP_TRUST_PROXY_HOPS=1` only when exactly one trusted proxy sits in front of the Node.js server, as in the provided Nginx example. Do not reuse that value when exposing the Node.js port directly or when the proxy hop count differs. Incorrectly trusting `X-Forwarded-For` can allow OAuth rate limits to be bypassed.
 
@@ -290,11 +290,11 @@ curl http://127.0.0.1:3000/health
 curl https://mcp.example.com/health
 
 # Service status and live logs
-sudo systemctl status remote-dev-mcp
-sudo journalctl -u remote-dev-mcp -f
+sudo systemctl status project-moon
+sudo journalctl -u project-moon -f
 
 # Restart after changing configuration or code
-sudo systemctl restart remote-dev-mcp
+sudo systemctl restart project-moon
 ```
 
 Example healthy response:
@@ -302,7 +302,7 @@ Example healthy response:
 ```json
 {
   "status": "ok",
-  "service": "cokacremote",
+  "service": "project-moon",
   "version": "0.1.0",
   "transportMode": "stateless-json",
   "activeMcpSessions": 0,
@@ -321,7 +321,7 @@ Example healthy response:
 To inspect recent MCP request logs only:
 
 ```bash
-sudo journalctl -u remote-dev-mcp -o cat | grep '"event":"mcp_request"'
+sudo journalctl -u project-moon -o cat | grep '"event":"mcp_request"'
 ```
 
 - `Error fetching OAuth configuration`: Check `MCP_OAUTH_ENABLED`, the public URL, and the Nginx proxy for `/.well-known/` routes.
@@ -354,11 +354,11 @@ From a separate source checkout with development dependencies installed, you can
 ```bash
 MCP_E2E_URL='https://mcp.example.com/mcp' \
 MCP_E2E_TOKEN='<bearer-token>' \
-MCP_E2E_ROOT='/tmp/cokacremote-tools-e2e-manual' \
+MCP_E2E_ROOT='/tmp/project-moon-tools-e2e-manual' \
 npx vitest run test/all-tools.integration.test.ts
 ```
 
-This verification executes real commands on the target server and creates, modifies, and deletes test files. For safety, `MCP_E2E_ROOT` must match the `/tmp/cokacremote-tools-e2e-*` pattern. The test uses only that isolated directory and attempts to clean it afterward. Do not point it at a directory containing production data, and check whether the directory remains after a failed or interrupted test. Running `npm ci` inside the production installation directory may alter its production-only dependency layout, so run tests from a separate checkout instead.
+This verification executes real commands on the target server and creates, modifies, and deletes test files. For safety, `MCP_E2E_ROOT` must match the `/tmp/project-moon-tools-e2e-*` pattern. The test uses only that isolated directory and attempts to clean it afterward. Do not point it at a directory containing production data, and check whether the directory remains after a failed or interrupted test. Running `npm ci` inside the production installation directory may alter its production-only dependency layout, so run tests from a separate checkout instead.
 
 ## Key environment variables
 
@@ -425,3 +425,6 @@ This includes, but is not limited to:
 The user assumes full responsibility for all consequences arising from the use of this software, whether such use was intended, authorized, or foreseeable.
 
 **ALL RISKS ASSOCIATED WITH USE ARE BORNE BY THE USER**
+## Attribution
+
+Project Moon is derived from the MIT-licensed `cokacremote` project by kstost. The original copyright and license notice are preserved in `LICENSE`.

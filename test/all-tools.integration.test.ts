@@ -74,9 +74,9 @@ function externalRoot(): string | undefined {
   if (!value) {
     return undefined;
   }
-  if (!/^\/tmp\/cokacremote-tools-e2e-[A-Za-z0-9._-]+$/.test(value)) {
+  if (!/^\/tmp\/project-moon-tools-e2e-[A-Za-z0-9._-]+$/.test(value)) {
     throw new Error(
-      "MCP_E2E_ROOT must be an isolated /tmp/cokacremote-tools-e2e-* path",
+      "MCP_E2E_ROOT must be an isolated /tmp/project-moon-tools-e2e-* path",
     );
   }
   return value;
@@ -128,10 +128,10 @@ describe.sequential("all registered MCP tools", () => {
       if (!authToken) {
         throw new Error("MCP_E2E_TOKEN is required with MCP_E2E_URL");
       }
-      testRoot = externalRoot() ?? `/tmp/cokacremote-tools-e2e-${randomUUID()}`;
+      testRoot = externalRoot() ?? `/tmp/project-moon-tools-e2e-${randomUUID()}`;
       endpoint = new URL(externalUrl);
     } else {
-      localDirectory = await mkdtemp(path.join(os.tmpdir(), "cokacremote-all-tools-"));
+      localDirectory = await mkdtemp(path.join(os.tmpdir(), "project-moon-all-tools-"));
       testRoot = path.join(localDirectory, "tool-root");
       authToken = "all-tools-test-secret";
       const config = loadConfig(
@@ -279,7 +279,7 @@ describe.sequential("all registered MCP tools", () => {
       env: "script-env-ok",
       stdin: "script-stdin-ok",
     });
-    expect(String(script.scriptPath)).toMatch(/^\/tmp\/remote-dev-mcp-script-/);
+    expect(String(script.scriptPath)).toMatch(/^\/tmp\/project-moon-script-/);
     const keptScript = await callOk("stat_path", { path: script.scriptPath });
     expect(keptScript).toMatchObject({ type: "file", mode: "0700" });
     await callOk("remove_path", {

@@ -6,7 +6,7 @@ const envText = readFileSync(new URL("../tunneling/.env.public", import.meta.url
 const base = envText.match(/^MCP_PUBLIC_URL=(.+)$/m)?.[1]?.trim();
 if (!base) throw new Error("MCP_PUBLIC_URL is missing");
 const resource = `${base}/mcp`;
-const key = execFileSync("docker", ["exec", "cokacremote-local", "cat", "/var/lib/cokacremote/oauth-approval-key"], { encoding: "utf8" }).trim();
+const key = execFileSync("docker", ["exec", "project-moon-local", "cat", "/var/lib/project-moon/oauth-approval-key"], { encoding: "utf8" }).trim();
 const form = (values) => new URLSearchParams(values).toString();
 const request = (url, options = {}) => fetch(url, { redirect: "manual", ...options });
 const check = (condition, message) => { if (!condition) throw new Error(message); };
@@ -20,8 +20,8 @@ const protectedMetadata = await (await fetch(`${base}/.well-known/oauth-protecte
 const serverMetadata = await (await fetch(`${base}/.well-known/oauth-authorization-server`)).json();
 check(protectedMetadata.resource === resource && serverMetadata.issuer === `${base}/`, "OAuth discovery mismatch");
 
-const redirectUri = "https://chatgpt.com/connector/oauth/cokacremote-verification";
-const registration = await request(`${base}/register`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ redirect_uris: [redirectUri], token_endpoint_auth_method: "none", grant_types: ["authorization_code", "refresh_token"], response_types: ["code"], client_name: "cokacremote public verification", scope: "mcp:tools" }) });
+const redirectUri = "https://chatgpt.com/connector/oauth/project-moon-verification";
+const registration = await request(`${base}/register`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ redirect_uris: [redirectUri], token_endpoint_auth_method: "none", grant_types: ["authorization_code", "refresh_token"], response_types: ["code"], client_name: "project-moon public verification", scope: "mcp:tools" }) });
 check(registration.status === 201, "dynamic client registration failed");
 const { client_id } = await registration.json();
 const verifier = randomBytes(48).toString("base64url");

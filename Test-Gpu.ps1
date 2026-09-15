@@ -31,18 +31,18 @@ try {
         throw 'Docker does not advertise the nvidia runtime.'
     }
 
-    $inspect = docker inspect cokacremote-local | ConvertFrom-Json
-    if ($LASTEXITCODE -ne 0 -or $inspect.Count -ne 1) { throw 'cokacremote-local is unavailable.' }
+    $inspect = docker inspect project-moon-local | ConvertFrom-Json
+    if ($LASTEXITCODE -ne 0 -or $inspect.Count -ne 1) { throw 'project-moon-local is unavailable.' }
 
     $gpuRequest = @($inspect[0].HostConfig.DeviceRequests) | Where-Object {
         ($_.Capabilities | ConvertTo-Json -Compress) -match 'gpu'
     }
-    if (-not $gpuRequest) { throw 'cokacremote-local has no GPU device request.' }
+    if (-not $gpuRequest) { throw 'project-moon-local has no GPU device request.' }
 
-    $containerRows = @(docker exec cokacremote-local nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv,noheader,nounits)
+    $containerRows = @(docker exec project-moon-local nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv,noheader,nounits)
     if ($LASTEXITCODE -ne 0 -or $containerRows.Count -eq 0) { throw 'Container nvidia-smi query failed.' }
 
-    $containerSummary = docker exec cokacremote-local nvidia-smi
+    $containerSummary = docker exec project-moon-local nvidia-smi
     if ($LASTEXITCODE -ne 0) { throw 'Container nvidia-smi summary failed.' }
     $cudaMatch = [regex]::Match(($containerSummary -join "`n"), 'CUDA Version:\s*([0-9.]+)')
 

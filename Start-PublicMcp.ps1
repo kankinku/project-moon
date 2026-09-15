@@ -36,7 +36,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Failed to start cloudflared.' }
 
 $publicUrl = $null
 for ($attempt = 0; $attempt -lt 30 -and -not $publicUrl; $attempt++) {
-    $logs = docker logs cokacremote-cloudflared 2>&1 | Out-String
+    $logs = docker logs project-moon-cloudflared 2>&1 | Out-String
     $matches = [regex]::Matches($logs, 'https://[a-z0-9-]+\.trycloudflare\.com')
     if ($matches.Count -gt 0) { $publicUrl = $matches[$matches.Count - 1].Value }
     if (-not $publicUrl) { Start-Sleep -Seconds 2 }
@@ -62,8 +62,8 @@ for ($attempt = 0; $attempt -lt 30; $attempt++) {
 if ($health.status -ne 'ok' -or $health.oauthEnabled -ne $true) { throw 'Public OAuth health verification failed.' }
 
 if ($Gpu) {
-    $containerGpu = docker exec cokacremote-local nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv,noheader
-    if ($LASTEXITCODE -ne 0) { throw 'NVIDIA GPU verification failed inside cokacremote-local.' }
+    $containerGpu = docker exec project-moon-local nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv,noheader
+    if ($LASTEXITCODE -ne 0) { throw 'NVIDIA GPU verification failed inside project-moon-local.' }
     Write-Output "GPU_DEVICE=$containerGpu"
 }
 

@@ -459,7 +459,7 @@ export class FileService {
   ): Promise<Record<string, unknown>> {
     const resolvedCwd = this.resolve(".", cwd);
     const temporaryDirectory = await mkdtemp(
-      path.join(os.tmpdir(), "remote-dev-mcp-patch-"),
+      path.join(os.tmpdir(), "project-moon-patch-"),
     );
     const patchPath = path.join(temporaryDirectory, `${randomUUID()}.patch`);
     await writeFile(patchPath, patchText, "utf8");
@@ -594,7 +594,7 @@ export class FileService {
         await lstat(destination);
         destinationBackup = path.join(
           path.dirname(destination),
-          `.cokacremote-move-backup-${randomUUID()}`,
+          `.project-moon-move-backup-${randomUUID()}`,
         );
         await rename(destination, destinationBackup);
       } catch (error) {

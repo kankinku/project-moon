@@ -57,8 +57,8 @@ export function createBearerAuth(
     }
 
     const challenge = config.oauthEnabled
-      ? `Bearer realm="cokacremote", error="invalid_token", scope="mcp:tools", resource_metadata="${oauthResourceMetadataUrl(config)}"`
-      : 'Bearer realm="cokacremote"';
+      ? `Bearer realm="project-moon", error="invalid_token", scope="mcp:tools", resource_metadata="${oauthResourceMetadataUrl(config)}"`
+      : 'Bearer realm="project-moon"';
     response.status(401).set("WWW-Authenticate", challenge).json({
       jsonrpc: "2.0",
       error: { code: -32001, message: "Unauthorized" },

@@ -27,7 +27,7 @@ async function reservePort(): Promise<number> {
 describe("OAuth endpoint security boundaries", () => {
   it("does not trust spoofed forwarded IPs unless a proxy is explicitly configured", async () => {
     const temporaryDirectory = await mkdtemp(
-      path.join(os.tmpdir(), "cokacremote-auth-boundary-test-"),
+      path.join(os.tmpdir(), "project-moon-auth-boundary-test-"),
     );
     const port = await reservePort();
     const baseUrl = `http://127.0.0.1:${port}`;
@@ -86,7 +86,7 @@ describe("OAuth endpoint security boundaries", () => {
 
   it("rolls back failed state writes and revokes an entire token grant", async () => {
     const temporaryDirectory = await mkdtemp(
-      path.join(os.tmpdir(), "cokacremote-oauth-store-test-"),
+      path.join(os.tmpdir(), "project-moon-oauth-store-test-"),
     );
     const baseEnvironment = {
       MCP_OAUTH_ENABLED: "true",

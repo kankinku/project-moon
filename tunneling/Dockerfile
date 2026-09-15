@@ -3,10 +3,6 @@ FROM ubuntu:24.04
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG TIMEZONE=UTC
-ARG COKACREMOTE_REPOSITORY=https://github.com/kstost/cokacremote.git
-ARG COKACREMOTE_REF=main
-ARG COKACREMOTE_REVISION=
-
 ENV TZ=${TIMEZONE} \
     NODE_ENV=production \
     MCP_HOST=127.0.0.1 \
@@ -16,8 +12,8 @@ ENV TZ=${TIMEZONE} \
     MCP_TRUST_PROXY_HOPS=1 \
     MCP_AUTH_TOKEN="" \
     MCP_OAUTH_ENABLED=true \
-    MCP_OAUTH_STATE_FILE=/var/lib/cokacremote/oauth-state.json \
-    MCP_OAUTH_APPROVAL_KEY_FILE=/var/lib/cokacremote/oauth-approval-key
+    MCP_OAUTH_STATE_FILE=/var/lib/project-moon/oauth-state.json \
+    MCP_OAUTH_APPROVAL_KEY_FILE=/var/lib/project-moon/oauth-approval-key
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
@@ -36,17 +32,15 @@ RUN ln -snf /usr/share/zoneinfo/${TZ} /etc/localtime \
     && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
 
-RUN git clone --depth 1 --branch "${COKACREMOTE_REF}" \
-        "${COKACREMOTE_REPOSITORY}" /opt/cokacremote \
-    && cd /opt/cokacremote \
-    && test -z "${COKACREMOTE_REVISION}" \
-        || test "$(git rev-parse --short=7 HEAD)" = "${COKACREMOTE_REVISION}"
+WORKDIR /opt/project-moon
 
-COPY package-lock.json /opt/cokacremote/package-lock.json
+COPY package.json package-lock.json tsconfig.json ./
+RUN npm ci --include=dev
 
-RUN cd /opt/cokacremote \
-    && npm ci --include=dev \
-    && npm run build \
+COPY src ./src
+COPY test ./test
+
+RUN npm run build \
     && npm prune --omit=dev \
     && npm cache clean --force
 
@@ -56,8 +50,8 @@ RUN <<'SETUP'
 set -eu
 
 rm -f /etc/nginx/sites-enabled/default
-mkdir -p /etc/nginx/routes.d /etc/nginx/snippets /var/lib/cokacremote /shared
-chmod 0700 /var/lib/cokacremote
+mkdir -p /etc/nginx/routes.d /etc/nginx/snippets /var/lib/project-moon /shared
+chmod 0700 /var/lib/project-moon
 
 cat > /etc/nginx/snippets/workmachine-proxy.conf <<'NGINX'
 proxy_http_version 1.1;
@@ -92,7 +86,7 @@ server {
 }
 NGINX
 
-cat > /etc/nginx/routes.d/10-cokacremote.conf <<'NGINX'
+cat > /etc/nginx/routes.d/10-project-moon.conf <<'NGINX'
 location = /mcp {
     include /etc/nginx/snippets/workmachine-proxy.conf;
     proxy_buffering off;
@@ -150,9 +144,9 @@ stdout_logfile_maxbytes=0
 stderr_logfile=/dev/stderr
 stderr_logfile_maxbytes=0
 
-[program:cokacremote]
+[program:project-moon]
 command=/usr/bin/npm start
-directory=/opt/cokacremote
+directory=/opt/project-moon
 priority=20
 autostart=true
 autorestart=true
@@ -221,7 +215,7 @@ ENTRYPOINT
 chmod 0755 /usr/local/bin/workmachine-entrypoint
 SETUP
 
-VOLUME ["/var/lib/cokacremote"]
+VOLUME ["/var/lib/project-moon"]
 
 WORKDIR /shared
 

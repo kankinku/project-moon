@@ -2,13 +2,13 @@
 
 ## Goal
 
-Allow the existing `cokacremote-local` Docker service to use the host NVIDIA GPU and run `nvidia-smi` without making GPU hardware a requirement for the normal CPU deployment. Preserve the current Nginx, OAuth, Cloudflare tunnel, storage, and host-isolation behavior.
+Allow the existing `project-moon-local` Docker service to use the host NVIDIA GPU and run `nvidia-smi` without making GPU hardware a requirement for the normal CPU deployment. Preserve the current Nginx, OAuth, Cloudflare tunnel, storage, and host-isolation behavior.
 
 ## Current Evidence
 
 - The host exposes an NVIDIA GeForce RTX 5060 Ti with 16 GB VRAM through driver 576.88.
 - Docker Desktop runs a Linux daemon and reports the `nvidia` container runtime.
-- The running `cokacremote-local` container has no Docker GPU device request, so it cannot currently use the GPU.
+- The running `project-moon-local` container has no Docker GPU device request, so it cannot currently use the GPU.
 - Driver 576.88 satisfies NVIDIA's Windows driver requirement for CUDA 12.9 Update 1.
 
 ## Chosen Approach
@@ -37,7 +37,7 @@ The base Ubuntu application image remains unchanged. NVIDIA Container Toolkit in
 2. Verify that Docker advertises the NVIDIA runtime.
 3. include the GPU Compose overlay in every Compose invocation used during the start/recreate flow.
 4. Recreate `workmachine` with its GPU device request while preserving the OAuth state volume and Cloudflare service.
-5. Verify `nvidia-smi` inside `cokacremote-local` before reporting success.
+5. Verify `nvidia-smi` inside `project-moon-local` before reporting success.
 
 Calling `Start-PublicMcp.ps1` without `-Gpu` retains the current CPU behavior.
 
@@ -69,8 +69,8 @@ Implementation is complete only when all of the following pass:
 2. CPU-only Compose configuration still renders successfully.
 3. GPU Compose configuration renders with a GPU device request and `compute,utility`.
 4. `Start-PublicMcp.ps1 -Gpu` completes on this host.
-5. `docker inspect cokacremote-local` shows an NVIDIA GPU device request.
-6. `docker exec cokacremote-local nvidia-smi` identifies the RTX 5060 Ti.
+5. `docker inspect project-moon-local` shows an NVIDIA GPU device request.
+6. `docker exec project-moon-local nvidia-smi` identifies the RTX 5060 Ti.
 7. `Test-Gpu.ps1` reports PASS without secrets.
 8. Public OAuth end-to-end verification still passes at the active MCP URL.
 9. The existing Linux test suite, typecheck, build, and production dependency audit still pass.

@@ -1,8 +1,8 @@
 # Local Docker MCP setup
 
-This deployment runs `cokacremote` in a Docker container and exposes its HTTP endpoint only to this Windows computer at `127.0.0.1:2999`.
+This deployment runs `project-moon` in a Docker container and exposes its HTTP endpoint only to this Windows computer at `127.0.0.1:2999`.
 
-The local environment fetches `main` but validates that it resolves to source commit `d7ceca3`; a changed upstream branch makes the build fail rather than silently changing the server. Update both `COKACREMOTE_REF` and `COKACREMOTE_REVISION` deliberately when you choose to update the server.
+The local Docker image is built directly from the currently checked-out Project Moon source. Pull or switch to the Git revision you want first, run the project checks, then rebuild the image so the container exactly matches that checkout.
 
 The build overlays the audited local `package-lock.json` on that pinned source before `npm ci`. This keeps the application source reproducible while allowing security-only transitive dependency updates to be verified and deployed.
 
@@ -43,7 +43,7 @@ The build overlays the audited local `package-lock.json` on that pinned source b
    docker compose --env-file tunneling/.env.local -f tunneling/docker-compose.local.yml down
    ```
 
-The persistent runtime state uses the Docker volume `tunneling_cokacremote-local-state`, separate from host project files.
+The persistent runtime state uses the Docker volume `tunneling_project-moon-local-state`, separate from host project files.
 
 ## Connect through OpenAI Secure MCP Tunnel
 
@@ -59,7 +59,7 @@ The tunnel client and the Docker health endpoint must be running whenever ChatGP
 Run the bootstrap script from PowerShell:
 
 ```powershell
-Set-Location C:\Users\<user>\Desktop\cokacremote
+Set-Location C:\Users\<user>\Desktop\project-moon
 pwsh -NoProfile -ExecutionPolicy Bypass -File .\Start-PublicMcp.ps1
 ```
 
@@ -87,7 +87,7 @@ The GPU path checks host `nvidia-smi` and the Docker NVIDIA runtime before chang
 
 ```powershell
 pwsh -NoProfile -ExecutionPolicy Bypass -File .\Test-Gpu.ps1
-docker exec cokacremote-local nvidia-smi
+docker exec project-moon-local nvidia-smi
 ```
 
 This exposes the host driver and GPU to container workloads but does not install PyTorch, TensorFlow, Ollama, `nvcc`, or another CUDA application framework. Install a workload-specific userspace framework separately when needed.
@@ -104,4 +104,4 @@ Stop the public endpoint without deleting the persistent OAuth state volume:
 pwsh -NoProfile -ExecutionPolicy Bypass -File .\Stop-PublicMcp.ps1
 ```
 
-The `trycloudflare.com` hostname belongs to the current Quick Tunnel process. If `cokacremote-cloudflared` is restarted or recreated, run `Start-PublicMcp.ps1` again and update the MCP URL in ChatGPT. A stable production URL requires an owned domain and a named tunnel.
+The `trycloudflare.com` hostname belongs to the current Quick Tunnel process. If `project-moon-cloudflared` is restarted or recreated, run `Start-PublicMcp.ps1` again and update the MCP URL in ChatGPT. A stable production URL requires an owned domain and a named tunnel.
