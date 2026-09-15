@@ -40,13 +40,17 @@ RUN git clone --depth 1 --branch "${COKACREMOTE_REF}" \
         "${COKACREMOTE_REPOSITORY}" /opt/cokacremote \
     && cd /opt/cokacremote \
     && test -z "${COKACREMOTE_REVISION}" \
-        || test "$(git rev-parse --short=7 HEAD)" = "${COKACREMOTE_REVISION}" \
+        || test "$(git rev-parse --short=7 HEAD)" = "${COKACREMOTE_REVISION}"
+
+COPY package-lock.json /opt/cokacremote/package-lock.json
+
+RUN cd /opt/cokacremote \
     && npm ci --include=dev \
     && npm run build \
     && npm prune --omit=dev \
     && npm cache clean --force
 
-COPY templates/AGENTS.md /usr/local/share/workmachine/AGENTS.md
+COPY tunneling/templates/AGENTS.md /usr/local/share/workmachine/AGENTS.md
 
 RUN <<'SETUP'
 set -eu

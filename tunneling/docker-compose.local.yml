@@ -1,7 +1,8 @@
 services:
   workmachine:
     build:
-      context: .
+      context: ..
+      dockerfile: tunneling/Dockerfile
       args:
         TIMEZONE: "${TZ:-Asia/Seoul}"
         COKACREMOTE_REF: "${COKACREMOTE_REF:-main}"

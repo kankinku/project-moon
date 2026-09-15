@@ -4,6 +4,8 @@ This deployment runs `cokacremote` in a Docker container and exposes its HTTP en
 
 The local environment fetches `main` but validates that it resolves to source commit `d7ceca3`; a changed upstream branch makes the build fail rather than silently changing the server. Update both `COKACREMOTE_REF` and `COKACREMOTE_REVISION` deliberately when you choose to update the server.
 
+The build overlays the audited local `package-lock.json` on that pinned source before `npm ci`. This keeps the application source reproducible while allowing security-only transitive dependency updates to be verified and deployed.
+
 ## Security boundary
 
 - Only [`shared/`](shared/) is mounted into the container as `/shared`.
