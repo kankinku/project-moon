@@ -75,6 +75,29 @@ Verify the complete public DCR, PKCE, token, refresh, and authenticated MCP flow
 node .\scripts\verify-public-oauth.mjs
 ```
 
+## Optional NVIDIA GPU access
+
+The normal start command remains CPU-portable. On this NVIDIA host, add `-Gpu` to merge the GPU-only Compose overlay and recreate `workmachine` with access to all NVIDIA GPUs:
+
+```powershell
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\Start-PublicMcp.ps1 -Gpu
+```
+
+The GPU path checks host `nvidia-smi` and the Docker NVIDIA runtime before changing containers. It grants only the `compute,utility` driver capabilities to `workmachine`; `cloudflared` receives no GPU device. Verify the live host, Docker, and container state without printing OAuth secrets:
+
+```powershell
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\Test-Gpu.ps1
+docker exec cokacremote-local nvidia-smi
+```
+
+This exposes the host driver and GPU to container workloads but does not install PyTorch, TensorFlow, Ollama, `nvcc`, or another CUDA application framework. Install a workload-specific userspace framework separately when needed.
+
+To return to CPU-only mode while retaining the OAuth state and approval key volume, run the start script again without `-Gpu`:
+
+```powershell
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\Start-PublicMcp.ps1
+```
+
 Stop the public endpoint without deleting the persistent OAuth state volume:
 
 ```powershell
