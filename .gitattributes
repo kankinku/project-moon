@@ -1,0 +1,2 @@
+# Docker BuildKit heredocs are parsed by a Linux shell and must retain LF endings.
+tunneling/Dockerfile text eol=lf
