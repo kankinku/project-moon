@@ -32,8 +32,8 @@ describe("stable Tailscale Funnel deployment", () => {
   test("the Windows bootstrap derives and verifies the Funnel URL", () => {
     const startScript = read("Start-PublicMcp.ps1");
     expect(startScript).toContain("[string]$TailscaleHostname = 'project-moon'");
-    expect(startScript).toContain("up --unattended=true");
-    expect(startScript).toContain("set --hostname=$TailscaleHostname");
+    expect(startScript).toContain("up --unattended=true --hostname=$TailscaleHostname");
+    expect(startScript).not.toContain("set --hostname=$TailscaleHostname");
     expect(startScript).toContain("status --json 2>$null");
     expect(startScript).toContain("status --json");
     expect(startScript).toContain("Self.DNSName");

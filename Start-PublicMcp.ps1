@@ -30,17 +30,13 @@ if ($IsWindows -or $env:OS -eq 'Windows_NT') {
     }
 }
 
-# Connect/authenticate if needed and enable Windows unattended mode using the documented
-# Windows command. Keep hostname mutation separate so existing non-default `tailscale up`
-# settings are not accidentally reset.
-& $tailscale.Source up --unattended=true
+# Tailscale requires every previously configured non-default `up` flag to be repeated.
+# Project Moon owns both unattended mode and this machine name, so keep them together on
+# every `tailscale up` invocation. This also makes reruns idempotent after the hostname has
+# already been changed to project-moon.
+& $tailscale.Source up --unattended=true --hostname=$TailscaleHostname
 if ($LASTEXITCODE -ne 0) {
     throw 'Tailscale failed to connect or enable unattended mode. Complete Tailscale login and retry.'
-}
-
-& $tailscale.Source set --hostname=$TailscaleHostname
-if ($LASTEXITCODE -ne 0) {
-    throw "Tailscale failed to set the machine hostname to '$TailscaleHostname'."
 }
 
 # Some Windows Tailscale builds can emit informational text on stderr while stdout is valid
