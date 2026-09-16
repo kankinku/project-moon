@@ -18,6 +18,7 @@ const DEFAULT_CONFIG: MoonHarnessConfig = {
       "(^|/)(Dockerfile|docker-compose[^/]*\\.ya?ml)$",
       "^(Start-PublicMcp|Stop-PublicMcp|Get-OAuthApprovalKey)\\.ps1$",
       "^\\.github/workflows/",
+      "^moon\\.config\\.json$",
     ],
     mediumPathPatterns: ["^src/", "^package(-lock)?\\.json$", "^tsconfig\\.json$", "^test/"],
     highKeywords: [
@@ -68,6 +69,7 @@ export async function loadHarnessConfig(repoRoot: string): Promise<{ config: Moo
       config.validation.riskProfiles = { ...config.validation.riskProfiles, ...parsed.validation.riskProfiles };
     }
     if (parsed.risk) config.risk = { ...config.risk, ...parsed.risk };
+    if (parsed.architecture) config.architecture = parsed.architecture;
     assertConfig(config);
     return { config, configFile: "moon.config.json" };
   }

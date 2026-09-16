@@ -11,6 +11,7 @@ export async function runValidationCommand(
   repoRoot: string,
   command: string,
   timeoutMs: number,
+  env: NodeJS.ProcessEnv = {},
 ): Promise<TaskValidationCommandResult> {
   const started = Date.now();
   try {
@@ -19,6 +20,7 @@ export async function runValidationCommand(
       timeout: timeoutMs,
       maxBuffer: 8 * 1024 * 1024,
       encoding: "utf8",
+      env: { ...process.env, ...env },
     });
     return {
       command,

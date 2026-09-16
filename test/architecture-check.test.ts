@@ -13,9 +13,12 @@ async function git(repo: string, args: string[]) {
   await execFileAsync("git", ["-C", repo, ...args]);
 }
 
-async function run(repo: string) {
+async function run(repo: string, env: NodeJS.ProcessEnv = {}) {
   try {
-    const result = await execFileAsync(process.execPath, [checker, "--repo", repo, "--json"], { encoding: "utf8" });
+    const result = await execFileAsync(process.execPath, [checker, "--repo", repo, "--json"], {
+      encoding: "utf8",
+      env: { ...process.env, ...env },
+    });
     return { exitCode: 0, stdout: String(result.stdout), stderr: String(result.stderr) };
   } catch (error) {
     const failure = error as Error & { code?: number; stdout?: string; stderr?: string };
@@ -60,6 +63,50 @@ describe("architecture checker", () => {
     expect(result.status).toBe("FAIL");
     expect(result.issues).toEqual(expect.arrayContaining([
       expect.objectContaining({ type: "dependency", message: "forbidden architecture dependency: infra -> application" }),
+    ]));
+  });
+
+  it("uses MOON_CONFIG_PATH so a weakened live policy cannot bypass pinned architecture rules", async () => {
+    const repo = await mkdtemp(path.join(os.tmpdir(), "moon-architecture-pinned-"));
+    await mkdir(path.join(repo, "src", "application"), { recursive: true });
+    await mkdir(path.join(repo, "src", "infra"), { recursive: true });
+    await mkdir(path.join(repo, ".moon", "tasks", "test-run"), { recursive: true });
+
+    const strictPolicy = {
+      architecture: {
+        layers: [
+          { name: "application", patterns: ["^src/application/"] },
+          { name: "infra", patterns: ["^src/infra/"] },
+        ],
+        deny: [{ from: "infra", to: "application" }],
+        maxFileLines: [],
+      },
+    };
+    const pinnedPath = path.join(repo, ".moon", "tasks", "test-run", "harness-policy.json");
+    await writeFile(pinnedPath, JSON.stringify(strictPolicy, null, 2));
+    await writeFile(path.join(repo, "moon.config.json"), JSON.stringify({
+      architecture: {
+        layers: [],
+        deny: [],
+        maxFileLines: [],
+      },
+    }, null, 2));
+    await writeFile(path.join(repo, "src", "application", "service.ts"), 'export const service = "app";\n');
+    await writeFile(path.join(repo, "src", "infra", "repo.ts"), 'import { service } from "../application/service.js";\nexport const repo = service;\n');
+    await git(repo, ["init", "-q", "-b", "main"]);
+    await git(repo, ["add", "moon.config.json", "src"]);
+
+    const livePolicy = await run(repo);
+    expect(livePolicy.exitCode).toBe(0);
+    expect(JSON.parse(livePolicy.stdout)).toMatchObject({ status: "PASS" });
+
+    const pinnedPolicy = await run(repo, { MOON_CONFIG_PATH: pinnedPath });
+    expect(pinnedPolicy.exitCode).toBe(1);
+    expect(JSON.parse(pinnedPolicy.stdout).issues).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: "dependency",
+        message: "forbidden architecture dependency: infra -> application",
+      }),
     ]));
   });
 });

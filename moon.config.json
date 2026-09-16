@@ -35,14 +35,14 @@
       "^src/task/task-service\\.ts$",
       "^(deploy|tunneling)/",
       "^(Start-PublicMcp|Stop-PublicMcp|Get-OAuthApprovalKey)\\.ps1$",
-      "^\\.github/workflows/"
+      "^\\.github/workflows/",
+      "^moon\\.config\\.json$"
     ],
     "mediumPathPatterns": [
       "^src/",
       "^test/",
       "^package(-lock)?\\.json$",
-      "^tsconfig\\.json$",
-      "^moon\\.config\\.json$"
+      "^tsconfig\\.json$"
     ],
     "highKeywords": [
       "auth",

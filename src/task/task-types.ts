@@ -59,8 +59,28 @@ export interface TaskManifest {
   artifacts: Partial<Record<TaskArtifactKind, string>>;
   discovery: TaskDiscovery;
   risk: TaskRiskAssessment;
+  policySnapshot: {
+    file: string;
+    sha256: string;
+    sourceFile?: string;
+  };
   validation?: TaskValidationEvidence;
   completedAt?: string;
+}
+
+export interface ArchitectureLayerRule {
+  name: string;
+  patterns: string[];
+}
+
+export interface ArchitectureDenyRule {
+  from: string;
+  to: string;
+}
+
+export interface ArchitectureMaxFileLinesRule {
+  pattern: string;
+  max: number;
 }
 
 export interface MoonHarnessConfig {
@@ -75,5 +95,10 @@ export interface MoonHarnessConfig {
     mediumPathPatterns: string[];
     highKeywords: string[];
     mediumKeywords: string[];
+  };
+  architecture?: {
+    layers: ArchitectureLayerRule[];
+    deny: ArchitectureDenyRule[];
+    maxFileLines: ArchitectureMaxFileLinesRule[];
   };
 }

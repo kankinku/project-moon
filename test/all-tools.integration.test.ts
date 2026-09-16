@@ -880,7 +880,7 @@ describe.sequential("all registered MCP tools", () => {
         riskProfiles: { low: "fast", medium: "normal", high: "release" },
       },
       risk: {
-        highPathPatterns: ["^secure/"],
+        highPathPatterns: ["^secure/", "^moon\\.config\\.json$"],
         mediumPathPatterns: ["^value\\.txt$"],
         highKeywords: ["security-critical"],
         mediumKeywords: ["feature"],
@@ -993,6 +993,25 @@ describe.sequential("all registered MCP tools", () => {
       repoPath: repo,
       runId,
     })).toMatch(/changed after validation|fresh passing validation|rerun task_validate/);
+
+    const weakenedConfig = {
+      ...harnessConfig,
+      validation: {
+        profileOrder: ["fast", "normal", "release"],
+        profiles: { fast: ["true"], normal: ["true"], release: ["true"] },
+        riskProfiles: { low: "fast", medium: "fast", high: "fast" },
+      },
+      risk: { ...harnessConfig.risk, highPathPatterns: [], mediumPathPatterns: [] },
+    };
+    await callOk("write_file", {
+      path: "moon.config.json",
+      cwd: repo,
+      content: `${JSON.stringify(weakenedConfig, null, 2)}\n`,
+    });
+    expect(await callOk("task_status", { repoPath: repo, runId })).toMatchObject({
+      requiredValidationProfile: "release",
+      risk: { level: "high" },
+    });
 
     const releaseValidation = await callOk("task_validate", {
       repoPath: repo,

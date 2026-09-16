@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -8,6 +8,7 @@ import { classifyRisk } from "./task-risk.js";
 import { TaskStore } from "./task-store.js";
 import type {
   TaskArtifactKind,
+  MoonHarnessConfig,
   TaskManifest,
   TaskRiskLevel,
   TaskValidationCommandResult,
@@ -72,6 +73,10 @@ export class TaskService {
     const artifactDir = path.join(repoRoot, ".moon", "tasks", safeSegment(branch), runId);
     await mkdir(artifactDir, { recursive: true });
     await this.repository.ensureLocalIgnore(repoRoot);
+    const policySnapshotFile = "harness-policy.json";
+    const policySnapshotContent = `${JSON.stringify(config, null, 2)}\n`;
+    await writeFile(path.join(artifactDir, policySnapshotFile), policySnapshotContent, "utf8");
+    const policySnapshotHash = createHash("sha256").update(policySnapshotContent).digest("hex");
 
     const now = new Date().toISOString();
     const manifest: TaskManifest = {
@@ -89,6 +94,11 @@ export class TaskService {
       artifacts: {},
       discovery,
       risk,
+      policySnapshot: {
+        file: policySnapshotFile,
+        sha256: policySnapshotHash,
+        sourceFile: configFile,
+      },
     };
     await this.store.write(manifest);
 
@@ -112,7 +122,7 @@ export class TaskService {
   }): Promise<Record<string, unknown>> {
     const repoRoot = await this.repository.root(input.repoPath);
     const manifest = await this.store.read(repoRoot, input.runId);
-    const { config } = await loadHarnessConfig(repoRoot);
+    const config = await this.pinnedConfig(manifest);
     const changedPaths = await this.repository.changedPaths(repoRoot, manifest.baseSha);
     const currentRisk = classifyRisk(
       config,
@@ -197,7 +207,7 @@ export class TaskService {
     const manifest = await this.store.read(repoRoot, input.runId);
     if (!manifest.artifacts.plan) throw new Error("Task validation requires a recorded plan");
 
-    const { config } = await loadHarnessConfig(repoRoot);
+    const config = await this.pinnedConfig(manifest);
     const changedPaths = await this.repository.changedPaths(repoRoot, manifest.baseSha);
     const risk = classifyRisk(
       config,
@@ -232,7 +242,9 @@ export class TaskService {
     const results: TaskValidationCommandResult[] = [];
     const timeoutMs = input.timeoutMs ?? 5 * 60 * 1000;
     for (const command of commands) {
-      const result = await runValidationCommand(repoRoot, command, timeoutMs);
+      const result = await runValidationCommand(repoRoot, command, timeoutMs, {
+        MOON_CONFIG_PATH: path.join(manifest.artifactDir, manifest.policySnapshot.file),
+      });
       results.push(result);
       if (result.exitCode !== 0 || result.timedOut) break;
     }
@@ -301,7 +313,7 @@ export class TaskService {
   }): Promise<Record<string, unknown>> {
     const repoRoot = await this.repository.root(input.repoPath);
     const manifest = await this.store.read(repoRoot, input.runId);
-    const { config } = await loadHarnessConfig(repoRoot);
+    const config = await this.pinnedConfig(manifest);
     const changedPaths = await this.repository.changedPaths(repoRoot, manifest.baseSha);
     const currentRisk = classifyRisk(
       config,
@@ -325,6 +337,16 @@ export class TaskService {
       readyToComplete: manifest.state === "VERIFIED" && validationFresh,
       complete: manifest.state === "COMPLETE" && validationFresh,
     };
+  }
+
+  private async pinnedConfig(manifest: TaskManifest): Promise<MoonHarnessConfig> {
+    const snapshotPath = path.join(manifest.artifactDir, manifest.policySnapshot.file);
+    const content = await readFile(snapshotPath, "utf8");
+    const hash = createHash("sha256").update(content).digest("hex");
+    if (hash !== manifest.policySnapshot.sha256) {
+      throw new Error("Pinned harness policy snapshot was modified; start a new task run");
+    }
+    return JSON.parse(content) as MoonHarnessConfig;
   }
 
   private invalidateValidation(manifest: TaskManifest): void {

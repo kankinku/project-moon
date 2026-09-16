@@ -13,7 +13,7 @@ const jsonOutput = process.argv.includes("--json");
 const repoRoot = execFileSync("git", ["-C", requestedRepo, "rev-parse", "--show-toplevel"], {
   encoding: "utf8",
 }).trim();
-const configPath = path.join(repoRoot, "moon.config.json");
+const configPath = process.env.MOON_CONFIG_PATH ? path.resolve(process.env.MOON_CONFIG_PATH) : path.join(repoRoot, "moon.config.json");
 
 if (!existsSync(configPath)) {
   console.log(jsonOutput ? JSON.stringify({ status: "SKIP", reason: "moon.config.json not found" }) : "architecture_check SKIP: moon.config.json not found");
