@@ -11,7 +11,7 @@ ChatGPT
   -> Project Moon :3000
 ```
 
-The Tailscale DNS name is stable for the machine. `Start-PublicMcp.ps1` pins the machine name to `project-moon`, derives the actual `*.ts.net` hostname from `tailscale status --json`, writes the ignored `tunneling/.env.public`, starts Project Moon with OAuth enabled, then exposes port 2999 with a background Funnel.
+The Tailscale DNS name is stable for the machine. `Start-PublicMcp.ps1` pins the machine name to `project-moon`, obtains the canonical `*.ts.net` URL directly from Tailscale Funnel, writes the ignored `tunneling/.env.public`, then starts Project Moon with OAuth enabled behind that Funnel.
 
 ## Security boundary
 
@@ -76,7 +76,7 @@ The helper performs this sequence:
 
 1. Checks that the Tailscale CLI is installed and the shell is elevated.
 2. Runs Tailscale in unattended mode with machine hostname `project-moon`.
-3. Reads `Self.DNSName` from `tailscale status --json` and requires a `*.ts.net` name.
+3. Stops any older workmachine, enables the background Funnel, and reads the canonical `*.ts.net` HTTPS URL from Funnel output/status.
 4. Generates `tunneling/.env.public` with that stable URL and OAuth enabled.
 5. Starts/rebuilds only the `workmachine` Docker service.
 6. Verifies local OAuth health on `127.0.0.1:2999` before public exposure.

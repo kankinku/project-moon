@@ -23,12 +23,12 @@ Tailscale owns TLS termination and the `*.ts.net` namespace. Project Moon keeps 
 ## Bootstrap order
 
 1. Tailscale connects in Windows unattended mode with hostname `project-moon`.
-2. `tailscale status --json` supplies `Self.DNSName`.
-3. Project Moon writes that origin to ignored `.env.public` before container startup.
-4. Docker starts only `workmachine`; no public tunnel container exists.
-5. Local `/health` is verified through `127.0.0.1:2999` using the public Host value.
-6. `tailscale funnel --bg --yes 2999` exposes the loopback service through HTTPS 443.
-7. Public `/health` is verified through the `*.ts.net` URL.
+2. Any older `workmachine` is stopped so stale OAuth configuration cannot be exposed.
+3. `tailscale funnel --bg --yes 2999` configures persistent HTTPS ingress and reports the canonical `*.ts.net` URL.
+4. Project Moon writes that exact origin to ignored `.env.public`.
+5. Docker starts only `workmachine`; no public tunnel container exists.
+6. Local `/health` is verified through `127.0.0.1:2999`.
+7. Public `/health` is verified through the same `*.ts.net` URL.
 
 This order avoids the old Quick Tunnel bootstrap cycle in which the public URL had to be discovered after starting the tunnel and then injected into a restarted application.
 

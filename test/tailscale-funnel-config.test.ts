@@ -34,11 +34,12 @@ describe("stable Tailscale Funnel deployment", () => {
     expect(startScript).toContain("[string]$TailscaleHostname = 'project-moon'");
     expect(startScript).toContain("up --unattended=true --hostname=$TailscaleHostname");
     expect(startScript).not.toContain("set --hostname=$TailscaleHostname");
-    expect(startScript).toContain("status --json 2>$null");
-    expect(startScript).toContain("status --json");
-    expect(startScript).toContain("Self.DNSName");
+    expect(startScript).not.toContain("status --json");
+    expect(startScript).toContain("funnel status");
+    expect(startScript).toContain("https://[A-Za-z0-9.-]+\\.ts\\.net/?");
     expect(startScript).toContain(".ts.net");
     expect(startScript).toContain("funnel --bg --yes 2999");
+    expect(startScript.indexOf("funnel --bg --yes 2999")).toBeLessThan(startScript.indexOf("up -d --build workmachine"));
     expect(startScript).toContain("MCP_OAUTH_ENABLED=true");
     expect(startScript).toContain("MCP_ALLOW_NO_AUTH=false");
     expect(startScript).toContain("PUBLIC_TRANSPORT=tailscale-funnel");

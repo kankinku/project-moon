@@ -39,44 +39,49 @@ if ($LASTEXITCODE -ne 0) {
     throw 'Tailscale failed to connect or enable unattended mode. Complete Tailscale login and retry.'
 }
 
-# Some Windows Tailscale builds can emit informational text on stderr while stdout is valid
-# JSON. Never merge stderr into the JSON stream. If stdout still has a harmless banner, trim
-# everything outside the outermost JSON object before parsing.
-$statusLines = @(& $tailscale.Source status --json 2>$null)
-$statusExitCode = $LASTEXITCODE
-$statusRaw = ($statusLines -join [Environment]::NewLine).Trim()
-if ($statusExitCode -ne 0) {
-    $statusText = (& $tailscale.Source status 2>&1 | Out-String).Trim()
-    throw "tailscale status failed: $statusText"
-}
-$jsonStart = $statusRaw.IndexOf('{')
-$jsonEnd = $statusRaw.LastIndexOf('}')
-if ($jsonStart -lt 0 -or $jsonEnd -lt $jsonStart) {
-    throw 'tailscale status --json returned no JSON object.'
-}
-$statusJson = $statusRaw.Substring($jsonStart, $jsonEnd - $jsonStart + 1)
-try {
-    $tailscaleStatus = $statusJson | ConvertFrom-Json
-} catch {
-    throw 'tailscale status --json returned malformed JSON.'
-}
-if ($tailscaleStatus.BackendState -ne 'Running') {
-    throw "Tailscale is not connected. BackendState=$($tailscaleStatus.BackendState)"
-}
-
-$dnsName = [string]$tailscaleStatus.Self.DNSName
-$dnsName = $dnsName.Trim().TrimEnd('.')
-if (-not $dnsName -or -not $dnsName.EndsWith('.ts.net', [System.StringComparison]::OrdinalIgnoreCase)) {
-    throw 'Tailscale did not provide a ts.net DNS name. Enable MagicDNS for the tailnet, then retry.'
-}
-$publicUrl = "https://$dnsName"
-
-# OAuth identity is anchored to the stable Tailscale DNS name before the application starts.
-$runtime = "MCP_PUBLIC_URL=$publicUrl`nMCP_ENDPOINT=/mcp`nMCP_OAUTH_ENABLED=true`nMCP_ALLOW_NO_AUTH=false`n"
-[System.IO.File]::WriteAllText($publicEnv, $runtime, [System.Text.UTF8Encoding]::new($false))
-
+# Docker must be available before changing the public ingress. Stop an older workmachine
+# first so a stale OAuth configuration is never exposed while the Funnel URL is discovered.
 docker version --format '{{.Server.Version}}' | Out-Null
 if ($LASTEXITCODE -ne 0) { throw 'Docker Desktop engine is not running.' }
+
+$stopArgs = @('compose', '--env-file', $localEnv, '-f', $composeFile, 'stop', 'workmachine')
+docker @stopArgs | Out-Null
+if ($LASTEXITCODE -ne 0) { throw 'Failed to stop the previous Project Moon workmachine before Funnel setup.' }
+
+# Funnel itself prints the canonical public URL. Use that output directly instead of
+# avoiding native-command JSON parsing, which varies across Windows PowerShell versions.
+# If a rerun does not echo the URL, fall back to the
+# human-readable Funnel status, which also contains the configured HTTPS URL.
+$funnelOutput = (& $tailscale.Source funnel --bg --yes 2999 2>&1 | Out-String).Trim()
+if ($LASTEXITCODE -ne 0) {
+    Write-Host $funnelOutput
+    throw 'Failed to enable Tailscale Funnel. If Tailscale presents an approval URL, approve Funnel for this tailnet and retry.'
+}
+
+$urlMatch = [regex]::Match($funnelOutput, 'https://[A-Za-z0-9.-]+\.ts\.net/?', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+if (-not $urlMatch.Success) {
+    $funnelStatus = (& $tailscale.Source funnel status 2>&1 | Out-String).Trim()
+    if ($LASTEXITCODE -ne 0) { throw "tailscale funnel status failed: $funnelStatus" }
+    $urlMatch = [regex]::Match($funnelStatus, 'https://[A-Za-z0-9.-]+\.ts\.net/?', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+}
+if (-not $urlMatch.Success) {
+    throw 'Tailscale Funnel did not report a public *.ts.net HTTPS URL.'
+}
+
+$publicUrl = $urlMatch.Value.TrimEnd('/')
+try {
+    $publicUri = [Uri]$publicUrl
+} catch {
+    throw "Tailscale Funnel returned an invalid public URL: $publicUrl"
+}
+$dnsName = $publicUri.Host
+if (-not $dnsName.EndsWith('.ts.net', [System.StringComparison]::OrdinalIgnoreCase)) {
+    throw "Tailscale Funnel returned an unexpected hostname: $dnsName"
+}
+
+# OAuth identity is anchored to the exact URL reported by Funnel before Project Moon starts.
+$runtime = "MCP_PUBLIC_URL=$publicUrl`nMCP_ENDPOINT=/mcp`nMCP_OAUTH_ENABLED=true`nMCP_ALLOW_NO_AUTH=false`n"
+[System.IO.File]::WriteAllText($publicEnv, $runtime, [System.Text.UTF8Encoding]::new($false))
 
 if ($Gpu) {
     $hostNvidiaSmi = Get-Command nvidia-smi -ErrorAction SilentlyContinue
@@ -113,14 +118,6 @@ for ($attempt = 0; $attempt -lt 30; $attempt++) {
 }
 if (-not $localHealth -or $localHealth.status -ne 'ok' -or $localHealth.oauthEnabled -ne $true) {
     throw 'Local OAuth health verification failed before enabling Tailscale Funnel.'
-}
-
-# A background Funnel persists across Tailscale and device restarts. Port 2999 is
-# proxied through the default public HTTPS listener (443) to 127.0.0.1:2999.
-$funnelOutput = & $tailscale.Source funnel --bg --yes 2999 2>&1 | Out-String
-if ($LASTEXITCODE -ne 0) {
-    Write-Host $funnelOutput
-    throw 'Failed to enable Tailscale Funnel. If Tailscale presents an approval URL, approve Funnel for this tailnet and retry.'
 }
 
 $publicHealth = $null

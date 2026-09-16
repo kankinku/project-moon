@@ -37,7 +37,7 @@ Install Tailscale, sign in, then use Administrator PowerShell:
 pwsh -NoProfile -ExecutionPolicy Bypass -File .\Start-PublicMcp.ps1
 ```
 
-The helper pins the Tailscale machine name to `project-moon`, discovers its stable `*.ts.net` DNS name, generates the ignored `.env.public`, starts Project Moon with OAuth enabled, and enables a persistent background Funnel to `127.0.0.1:2999`.
+The helper pins the Tailscale machine name to `project-moon`, obtains its stable `*.ts.net` URL directly from a persistent background Funnel, generates the ignored `.env.public`, and starts Project Moon with OAuth enabled behind `127.0.0.1:2999`.
 
 Tailscale Funnel requires MagicDNS, HTTPS support, and Funnel permission on the tailnet. A first-time setup can require browser approval.
 
