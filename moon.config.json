@@ -1,16 +1,23 @@
 {
   "schemaVersion": 1,
   "validation": {
-    "profileOrder": ["fast", "normal", "release"],
+    "profileOrder": [
+      "fast",
+      "normal",
+      "release"
+    ],
     "profiles": {
       "fast": [
+        "npm run check:architecture",
         "npm run typecheck"
       ],
       "normal": [
+        "npm run check:architecture",
         "npm run typecheck",
         "npm test"
       ],
       "release": [
+        "npm run check:architecture",
         "npm run typecheck",
         "npm test",
         "npm run build"
@@ -69,6 +76,70 @@
       "리팩터링",
       "의존성",
       "스키마"
+    ]
+  },
+  "architecture": {
+    "layers": [
+      {
+        "name": "task_transport",
+        "patterns": [
+          "^src/task/task-tools\\.ts$"
+        ]
+      },
+      {
+        "name": "task_application",
+        "patterns": [
+          "^src/task/task-service\\.ts$"
+        ]
+      },
+      {
+        "name": "task_policy",
+        "patterns": [
+          "^src/task/(task-config|task-risk)\\.ts$"
+        ]
+      },
+      {
+        "name": "task_infrastructure",
+        "patterns": [
+          "^src/task/(task-repository|task-store|task-validation)\\.ts$"
+        ]
+      }
+    ],
+    "deny": [
+      {
+        "from": "task_application",
+        "to": "task_transport"
+      },
+      {
+        "from": "task_policy",
+        "to": "task_application"
+      },
+      {
+        "from": "task_policy",
+        "to": "task_transport"
+      },
+      {
+        "from": "task_infrastructure",
+        "to": "task_application"
+      },
+      {
+        "from": "task_infrastructure",
+        "to": "task_transport"
+      }
+    ],
+    "maxFileLines": [
+      {
+        "pattern": "^src/task/task-service\\.ts$",
+        "max": 400
+      },
+      {
+        "pattern": "^src/task/task-tools\\.ts$",
+        "max": 200
+      },
+      {
+        "pattern": "^src/task/task-repository\\.ts$",
+        "max": 200
+      }
     ]
   }
 }
