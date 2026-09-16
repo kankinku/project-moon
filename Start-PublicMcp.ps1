@@ -30,20 +30,39 @@ if ($IsWindows -or $env:OS -eq 'Windows_NT') {
     }
 }
 
-# Connect/authenticate if needed, pin the machine name, and enable Windows unattended mode.
-# Tailscale refuses to silently discard non-default `tailscale up` flags, so an existing
-# custom configuration fails safely instead of being reset.
-& $tailscale.Source up --unattended=true --hostname=$TailscaleHostname
+# Connect/authenticate if needed and enable Windows unattended mode using the documented
+# Windows command. Keep hostname mutation separate so existing non-default `tailscale up`
+# settings are not accidentally reset.
+& $tailscale.Source up --unattended=true
 if ($LASTEXITCODE -ne 0) {
     throw 'Tailscale failed to connect or enable unattended mode. Complete Tailscale login and retry.'
 }
 
-$statusRaw = & $tailscale.Source status --json 2>&1 | Out-String
-if ($LASTEXITCODE -ne 0) { throw "tailscale status failed: $statusRaw" }
+& $tailscale.Source set --hostname=$TailscaleHostname
+if ($LASTEXITCODE -ne 0) {
+    throw "Tailscale failed to set the machine hostname to '$TailscaleHostname'."
+}
+
+# Some Windows Tailscale builds can emit informational text on stderr while stdout is valid
+# JSON. Never merge stderr into the JSON stream. If stdout still has a harmless banner, trim
+# everything outside the outermost JSON object before parsing.
+$statusLines = @(& $tailscale.Source status --json 2>$null)
+$statusExitCode = $LASTEXITCODE
+$statusRaw = ($statusLines -join [Environment]::NewLine).Trim()
+if ($statusExitCode -ne 0) {
+    $statusText = (& $tailscale.Source status 2>&1 | Out-String).Trim()
+    throw "tailscale status failed: $statusText"
+}
+$jsonStart = $statusRaw.IndexOf('{')
+$jsonEnd = $statusRaw.LastIndexOf('}')
+if ($jsonStart -lt 0 -or $jsonEnd -lt $jsonStart) {
+    throw 'tailscale status --json returned no JSON object.'
+}
+$statusJson = $statusRaw.Substring($jsonStart, $jsonEnd - $jsonStart + 1)
 try {
-    $tailscaleStatus = $statusRaw | ConvertFrom-Json
+    $tailscaleStatus = $statusJson | ConvertFrom-Json
 } catch {
-    throw 'tailscale status did not return valid JSON.'
+    throw 'tailscale status --json returned malformed JSON.'
 }
 if ($tailscaleStatus.BackendState -ne 'Running') {
     throw "Tailscale is not connected. BackendState=$($tailscaleStatus.BackendState)"
