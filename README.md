@@ -295,6 +295,26 @@ exec_command
 
 ---
 
+# AI 작업 모드: AUTO / DIRECT / HARNESS
+
+현재 Moon은 원본의 단순성을 버리지 않고 작업 방식으로 보존합니다. 세 모드 모두 동일한 32개 도구를 사용하며, 코드 경로를 이중으로 유지하지 않습니다. 차이는 **에이전트가 task lifecycle을 언제 사용하는가**입니다.
+
+| 모드 | 용도 | 기본 동작 |
+|---|---|---|
+| `AUTO` | 권장 기본값 | 조회·단발 작업·작은 국소 수정은 DIRECT, 다단계·고위험 변경은 HARNESS로 자동 선택 |
+| `DIRECT` | 원본 Moon 스타일 | `exec_command`, `run_script`, 파일 도구를 바로 사용하고 불필요한 `task_*` 상태를 만들지 않음 |
+| `HARNESS` | 복잡하거나 중요한 개발 | Context Brief → Plan → 위험도 검증 → fingerprinted validation → Complete 흐름 사용 |
+
+서버 기본값은 환경변수로 설정합니다.
+
+```dotenv
+MCP_WORKFLOW_MODE=auto
+```
+
+또한 사용자가 현재 요청에서 “DIRECT 모드로 처리해줘” 또는 “HARNESS 모드로 진행해줘”라고 명시하면 그 요청에 우선 적용합니다. DIRECT는 보안 제한을 없애는 모드가 아니라 **작업 lifecycle 오버헤드를 생략하는 모드**입니다. 작은 수정이라도 테스트가 필요하면 관련 검증은 직접 실행합니다. DIRECT로 시작한 작업이 다중 파일·설계 변경·인증/보안·배포 등의 범위로 커지면 HARNESS로 승격합니다.
+
+---
+
 # AI 작업 하니스 — 6개
 
 Project Moon의 작업 하니스는 에이전트가 곧바로 코드를 수정하는 대신 **구조 파악 → 브리핑 → 계획 → 구현 → 프로그램적 검증 → 완료** 순서로 작업하도록 돕습니다. 작업 산출물은 `.moon/` 아래의 로컬 런타임 데이터로 저장되며 Git에는 포함되지 않습니다.
@@ -758,6 +778,7 @@ https://project-moon.<tailnet>.ts.net/health
   "service": "project-moon",
   "version": "0.1.0",
   "transportMode": "stateless-json",
+  "workflowMode": "auto",
   "activeMcpSessions": 0,
   "activeMcpRequests": 0,
   "managedProcesses": 0,
@@ -850,6 +871,7 @@ npx vitest run test/all-tools.integration.test.ts
 | `MCP_OAUTH_ACCESS_TOKEN_TTL_SECONDS` | `3600` | Access Token 수명 |
 | `MCP_OAUTH_REFRESH_TOKEN_TTL_SECONDS` | `2592000` | Refresh Token 수명 |
 | `MCP_OAUTH_AUTHORIZATION_CODE_TTL_SECONDS` | `300` | Authorization Code 수명 |
+| `MCP_WORKFLOW_MODE` | `auto` | 기본 작업 정책: `auto`, `direct`, `harness` |
 | `MCP_DEFAULT_CWD` | 서버 시작 위치 | 상대경로 기준 디렉터리 |
 | `MCP_DEFAULT_SHELL` | `$SHELL` 또는 `/bin/bash` | 기본 셸 |
 | `MCP_MAX_REQUEST_BODY` | `8mb` | HTTP 요청 크기 제한 |

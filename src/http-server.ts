@@ -149,6 +149,7 @@ export async function startHttpServer(
       activeMcpRequests,
       managedProcesses: services.processManager.list().length,
       unrestrictedHostAccess: true,
+      workflowMode: config.workflowMode,
       oauthEnabled: config.oauthEnabled,
     });
   });

@@ -1,5 +1,7 @@
 import path from "node:path";
 
+export type WorkflowMode = "auto" | "direct" | "harness";
+
 export interface AppConfig {
   host: string;
   port: number;
@@ -26,6 +28,7 @@ export interface AppConfig {
   maxProcesses: number;
   maxFileChunkBytes: number;
   maxEditFileBytes: number;
+  workflowMode: WorkflowMode;
 }
 
 function parseBoolean(value: string | undefined, fallback: boolean): boolean {
@@ -60,6 +63,15 @@ function parseInteger(
     throw new Error(`${name} must be an integer ${range}`);
   }
   return parsed;
+}
+
+
+function parseWorkflowMode(value: string | undefined): WorkflowMode {
+  const normalized = value?.trim().toLowerCase() || "auto";
+  if (["auto", "direct", "harness"].includes(normalized)) {
+    return normalized as WorkflowMode;
+  }
+  throw new Error("MCP_WORKFLOW_MODE must be one of: auto, direct, harness");
 }
 
 function normalizeEndpoint(value: string | undefined): string {
@@ -215,5 +227,6 @@ export function loadConfig(
       "MCP_MAX_EDIT_FILE_BYTES",
       4096,
     ),
+    workflowMode: parseWorkflowMode(env.MCP_WORKFLOW_MODE),
   };
 }

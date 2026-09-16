@@ -6,8 +6,11 @@
 
 - 사용자의 목표와 현실 제약을 구현 세부사항과 분리해서 이해한다.
 - 실질적인 저장소 변경 전에는 관련 코드, 테스트, `moon.config.json`, `docs/adr.yaml`, `docs/code-convention.yaml`을 먼저 확인한다.
-- Project Moon의 `task_*` 도구를 사용할 수 있으면 `task_start → brief → plan → implement → task_validate → task_complete` 흐름을 기본으로 사용한다.
-- `task_*`를 사용할 수 없는 로컬 개발 환경에서도 구현 전에 구조와 영향 범위를 파악하고, 변경 후 `moon.config.json`의 검증 프로필과 동등한 프로그램적 검증을 수행한다.
+- Project Moon은 `AUTO`, `DIRECT`, `HARNESS` 작업 모드를 구분한다. 사용자가 현재 요청에서 모드를 명시하면 그 요청에 우선 적용한다.
+- `DIRECT`는 원본 Moon과 같은 저오버헤드 방식이다. 조회, 상태 확인, 단발 명령, 파일 전송, 범위가 명확한 작은 수정은 `exec_command`와 파일 도구를 바로 사용하고 불필요한 `task_*` 상태를 만들지 않는다.
+- `HARNESS`는 다중 파일·다단계 변경, 아키텍처/리팩터링, 의존성/스키마, 인증·보안, 배포·네트워크·마이그레이션·파괴적 변경에 사용하며 `task_start → brief → plan → implement → task_validate → task_complete` 흐름을 따른다.
+- `AUTO`에서는 DIRECT로 시작할 수 있지만 작업의 범위나 위험도가 커지면 구현을 계속하기 전에 HARNESS로 승격한다.
+- `task_*`를 사용할 수 없는 로컬 개발 환경에서도 실질적인 변경은 구조와 영향 범위를 파악하고, 변경 후 `moon.config.json`의 검증 프로필과 동등한 프로그램적 검증을 수행한다.
 - 기존 계획이 새 증거와 충돌하면 조용히 계획을 무시하지 말고 계획을 갱신한 뒤 구현한다.
 
 ## 구조 규칙

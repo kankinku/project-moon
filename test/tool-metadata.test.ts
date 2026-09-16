@@ -3,7 +3,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { describe, expect, it } from "vitest";
 
 import { loadConfig } from "../src/config.js";
-import { createMcpServer, createServices } from "../src/mcp-server.js";
+import { createMcpServer, createServices, workflowInstructions } from "../src/mcp-server.js";
 
 async function withClient<T>(
   env: NodeJS.ProcessEnv,
@@ -120,5 +120,30 @@ describe("client-facing metadata accuracy", () => {
       expect(properties.yieldTimeMs?.description).toContain("wait for");
       expect(properties.yieldTimeMs?.description).toContain("to exit");
     }
+  });
+});
+
+describe("workflow mode guidance", () => {
+  it("keeps DIRECT as the low-overhead original-style workflow", () => {
+    const instructions = workflowInstructions("direct");
+    expect(instructions).toContain("Default workflow: DIRECT");
+    expect(instructions).toContain("without creating task_* lifecycle state");
+    expect(instructions).toContain("Escalate to task_*");
+  });
+
+  it("uses AUTO to route simple actions to DIRECT and substantial changes to HARNESS", () => {
+    const instructions = workflowInstructions("auto");
+    expect(instructions).toContain("Default workflow: AUTO");
+    expect(instructions).toContain("read-only inspection");
+    expect(instructions).toContain("small localized changes");
+    expect(instructions).toContain("security/auth");
+    expect(instructions).toContain("escalate to HARNESS");
+  });
+
+  it("keeps read-only operations lightweight even when HARNESS is the default", () => {
+    const instructions = workflowInstructions("harness");
+    expect(instructions).toContain("Default workflow: HARNESS");
+    expect(instructions).toContain("Read-only inspection");
+    expect(instructions).toContain("task_start -> task_context(brief)");
   });
 });

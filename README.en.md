@@ -122,7 +122,25 @@ Available tools:
 - `write_file.fileMode` applies to new files and to overwrite/append operations.
 - `copy_path` reports a conflict when the destination exists and `force=false`.
 
-### 3. AI-native task harness
+### 3. Workflow modes: AUTO / DIRECT / HARNESS
+
+Project Moon preserves the original low-overhead behavior as a workflow mode instead of maintaining a second legacy code path. All modes expose the same 32 tools; the difference is when the agent should create `task_*` lifecycle state.
+
+| Mode | Intended use | Behavior |
+|---|---|---|
+| `AUTO` | Recommended default | DIRECT for inspection, one-shot work, and small localized changes; HARNESS for substantial/risky work |
+| `DIRECT` | Original Moon style | Use exec/file tools immediately without unnecessary task lifecycle state |
+| `HARNESS` | Complex or important development | Context brief → plan → risk-aware validation → fingerprinted completion |
+
+Set the server default with:
+
+```dotenv
+MCP_WORKFLOW_MODE=auto
+```
+
+A user can explicitly request DIRECT or HARNESS for the current operation. DIRECT is not a security bypass; it only skips task-lifecycle overhead. Relevant deterministic checks should still be run for code changes, and DIRECT work should escalate to HARNESS when its scope or risk grows.
+
+### 4. AI-native task harness
 
 For substantial repository work, Project Moon can enforce a **discover → brief → plan → implement → validate → complete** lifecycle instead of letting an agent jump directly into code changes. Task artifacts live under `.moon/` and are intentionally local/ephemeral.
 
@@ -166,7 +184,7 @@ The architecture guard checks tracked and untracked source files for forbidden l
 
 Validation metrics under `.moon/metrics/` keep command hashes, durations, and normalized failure signatures instead of raw long-term stdout/stderr. Repeated deterministic failures are surfaced as candidates for a regression test/rule/schema, while significant validation-runtime slowdowns are flagged as harness performance regressions.
 
-### 4. Provider-independent code-review harness
+### 5. Provider-independent code-review harness
 
 The review harness adapts the core workflow ideas of the MAFIA Code-Review Harness into Project Moon-native MCP tools. It does **not** require Claude Code or another specific model/provider at runtime.
 
@@ -483,6 +501,7 @@ Example health response:
   "service": "project-moon",
   "version": "0.1.0",
   "transportMode": "stateless-json",
+  "workflowMode": "auto",
   "activeMcpSessions": 0,
   "activeMcpRequests": 0,
   "managedProcesses": 0,
@@ -579,6 +598,7 @@ This test executes real commands and creates/modifies/deletes files on the targe
 | `MCP_OAUTH_ACCESS_TOKEN_TTL_SECONDS` | `3600` | Access-token lifetime |
 | `MCP_OAUTH_REFRESH_TOKEN_TTL_SECONDS` | `2592000` | Refresh-token lifetime |
 | `MCP_OAUTH_AUTHORIZATION_CODE_TTL_SECONDS` | `300` | One-time authorization-code lifetime |
+| `MCP_WORKFLOW_MODE` | `auto` | Default workflow policy: `auto`, `direct`, or `harness` |
 | `MCP_DEFAULT_CWD` | server startup directory | Base directory for relative filesystem/command paths |
 | `MCP_DEFAULT_SHELL` | `$SHELL` or `/bin/bash` | Default shell for `exec_command` |
 | `MCP_MAX_REQUEST_BODY` | `8mb` | HTTP request-body limit |

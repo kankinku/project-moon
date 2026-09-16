@@ -13,6 +13,7 @@ services:
       - "127.0.0.1:2999:2999"
     environment:
       TZ: "${TZ:-Asia/Seoul}"
+      MCP_WORKFLOW_MODE: "${MCP_WORKFLOW_MODE:-auto}"
       MCP_ALLOWED_HOSTS: "${MCP_ALLOWED_HOSTS:-}"
       MCP_PUBLIC_URL: "${MCP_PUBLIC_URL:-}"
       MCP_OAUTH_ISSUER: "${MCP_PUBLIC_URL:-}"

@@ -25,7 +25,18 @@ describe("loadConfig", () => {
       trustProxyHops: 0,
       authToken: "secret",
       allowedHosts: ["mcp.example.com", "localhost"],
+      workflowMode: "auto",
     });
+  });
+
+
+  it("supports auto, direct, and harness workflow modes", () => {
+    expect(loadConfig({ MCP_AUTH_TOKEN: "secret" }, "/tmp").workflowMode).toBe("auto");
+    expect(loadConfig({ MCP_AUTH_TOKEN: "secret", MCP_WORKFLOW_MODE: "DIRECT" }, "/tmp").workflowMode).toBe("direct");
+    expect(loadConfig({ MCP_AUTH_TOKEN: "secret", MCP_WORKFLOW_MODE: " harness " }, "/tmp").workflowMode).toBe("harness");
+    expect(() =>
+      loadConfig({ MCP_AUTH_TOKEN: "secret", MCP_WORKFLOW_MODE: "legacy" }, "/tmp"),
+    ).toThrow("MCP_WORKFLOW_MODE must be one of: auto, direct, harness");
   });
 
   it("rejects partial integers and ports outside the valid range", () => {
