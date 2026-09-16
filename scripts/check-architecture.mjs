@@ -63,10 +63,15 @@ for (const rule of compiledMaxLines) {
   if (!Number.isInteger(rule.max) || rule.max <= 0) issues.push({ type: "config", message: "maxFileLines.max must be a positive integer" });
 }
 
-const tracked = execFileSync("git", ["-C", repoRoot, "ls-files"], { encoding: "utf8" })
+const trackedFiles = execFileSync("git", ["-C", repoRoot, "ls-files"], { encoding: "utf8" })
   .split(/\r?\n/)
-  .filter(Boolean)
-  .map((value) => value.replaceAll("\\", "/"));
+  .filter(Boolean);
+const untrackedFiles = execFileSync("git", ["-C", repoRoot, "ls-files", "--others", "--exclude-standard"], { encoding: "utf8" })
+  .split(/\r?\n/)
+  .filter(Boolean);
+const tracked = [...new Set([...trackedFiles, ...untrackedFiles])]
+  .map((value) => value.replaceAll("\\", "/"))
+  .sort();
 const trackedSet = new Set(tracked);
 const sourceFiles = tracked.filter((file) => sourceExtensions.has(path.posix.extname(file)));
 

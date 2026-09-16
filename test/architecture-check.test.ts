@@ -64,6 +64,14 @@ describe("architecture checker", () => {
     expect(result.issues).toEqual(expect.arrayContaining([
       expect.objectContaining({ type: "dependency", message: "forbidden architecture dependency: infra -> application" }),
     ]));
+
+    await writeFile(path.join(repo, "src", "infra", "untracked.ts"), 'import { service } from "../application/service.js";\nexport const untracked = service;\n');
+    await writeFile(path.join(repo, "src", "infra", "repo.ts"), 'export const repo = "restored";\n');
+    const untrackedViolation = await run(repo);
+    expect(untrackedViolation.exitCode).toBe(1);
+    expect(JSON.parse(untrackedViolation.stdout).issues).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: "dependency", file: "src/infra/untracked.ts" }),
+    ]));
   });
 
   it("uses MOON_CONFIG_PATH so a weakened live policy cannot bypass pinned architecture rules", async () => {

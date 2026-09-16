@@ -3,6 +3,7 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { loadHarnessConfig } from "./task-config.js";
+import { buildRepositoryIndex, repositoryContextSummary, type TaskRepositoryIndex } from "./task-context-index.js";
 import { TaskRepository } from "./task-repository.js";
 import { classifyRisk } from "./task-risk.js";
 import { TaskStore } from "./task-store.js";
@@ -77,6 +78,11 @@ export class TaskService {
     const policySnapshotContent = `${JSON.stringify(config, null, 2)}\n`;
     await writeFile(path.join(artifactDir, policySnapshotFile), policySnapshotContent, "utf8");
     const policySnapshotHash = createHash("sha256").update(policySnapshotContent).digest("hex");
+    const repositoryIndexFile = "repository-index.json";
+    const repositoryIndex = await buildRepositoryIndex(this.repository, repoRoot, baseSha);
+    const repositoryIndexContent = `${JSON.stringify(repositoryIndex, null, 2)}\n`;
+    await writeFile(path.join(artifactDir, repositoryIndexFile), repositoryIndexContent, "utf8");
+    const repositoryIndexHash = createHash("sha256").update(repositoryIndexContent).digest("hex");
 
     const now = new Date().toISOString();
     const manifest: TaskManifest = {
@@ -98,6 +104,10 @@ export class TaskService {
         file: policySnapshotFile,
         sha256: policySnapshotHash,
         sourceFile: configFile,
+      },
+      repositoryIndex: {
+        file: repositoryIndexFile,
+        sha256: repositoryIndexHash,
       },
     };
     await this.store.write(manifest);
@@ -140,7 +150,10 @@ export class TaskService {
       domainContext: manifest.domainContext ?? "",
       branch: manifest.branch,
       baseSha: manifest.baseSha,
-      discovery: manifest.discovery,
+      discovery: {
+        ...manifest.discovery,
+        trackedFiles: manifest.discovery.trackedFiles.slice(0, 80),
+      },
       risk: currentRisk,
       requiredValidationProfile: config.validation.riskProfiles[currentRisk.level],
       changedPaths,
@@ -148,6 +161,11 @@ export class TaskService {
 
     if (input.stage === "brief") {
       context.policies = await this.repository.policyContext(repoRoot, manifest.discovery.policyFiles);
+      const repositoryIndex = await this.pinnedRepositoryIndex(manifest);
+      context.repositoryIndex = repositoryContextSummary(
+        repositoryIndex,
+        `${manifest.request}\n${manifest.domainContext ?? ""}`,
+      );
     }
     if (["plan", "execute", "validate"].includes(input.stage)) {
       const briefFile = manifest.artifacts.context_brief;
@@ -337,6 +355,16 @@ export class TaskService {
       readyToComplete: manifest.state === "VERIFIED" && validationFresh,
       complete: manifest.state === "COMPLETE" && validationFresh,
     };
+  }
+
+  private async pinnedRepositoryIndex(manifest: TaskManifest): Promise<TaskRepositoryIndex> {
+    const indexPath = path.join(manifest.artifactDir, manifest.repositoryIndex.file);
+    const content = await readFile(indexPath, "utf8");
+    const hash = createHash("sha256").update(content).digest("hex");
+    if (hash !== manifest.repositoryIndex.sha256) {
+      throw new Error("Pinned repository index was modified; start a new task run");
+    }
+    return JSON.parse(content) as TaskRepositoryIndex;
   }
 
   private async pinnedConfig(manifest: TaskManifest): Promise<MoonHarnessConfig> {

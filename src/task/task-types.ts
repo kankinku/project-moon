@@ -64,6 +64,10 @@ export interface TaskManifest {
     sha256: string;
     sourceFile?: string;
   };
+  repositoryIndex: {
+    file: string;
+    sha256: string;
+  };
   validation?: TaskValidationEvidence;
   completedAt?: string;
 }

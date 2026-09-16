@@ -49,6 +49,12 @@ describe("documentation knowledge audit", () => {
       expect.objectContaining({ type: "ephemeral-doc", file: "docs/plans/temporary.md" }),
       expect.objectContaining({ type: "broken-link", file: "README.md", target: "docs/missing.md" }),
     ]));
+
+    await writeFile(path.join(repo, "docs", "plans", "untracked.md"), "# Untracked temporary plan\n");
+    const withUntracked = await run(repo);
+    expect(JSON.parse(withUntracked.stdout).issues).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: "ephemeral-doc", file: "docs/plans/untracked.md" }),
+    ]));
   });
 
   it("uses pinned knowledge policy from MOON_CONFIG_PATH", async () => {

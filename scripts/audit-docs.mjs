@@ -19,10 +19,15 @@ const ephemeralPatterns = (knowledge.ephemeralPatterns ?? []).map((value) => new
 const generatedPatterns = (knowledge.generatedPatterns ?? []).map((value) => new RegExp(String(value)));
 const issues = [];
 
-const tracked = execFileSync("git", ["-C", repoRoot, "ls-files"], { encoding: "utf8" })
+const trackedFiles = execFileSync("git", ["-C", repoRoot, "ls-files"], { encoding: "utf8" })
   .split(/\r?\n/)
-  .filter(Boolean)
-  .map((value) => value.replaceAll("\\", "/"));
+  .filter(Boolean);
+const untrackedFiles = execFileSync("git", ["-C", repoRoot, "ls-files", "--others", "--exclude-standard"], { encoding: "utf8" })
+  .split(/\r?\n/)
+  .filter(Boolean);
+const tracked = [...new Set([...trackedFiles, ...untrackedFiles])]
+  .map((value) => value.replaceAll("\\", "/"))
+  .sort();
 const markdown = tracked.filter((file) => /\.md$/i.test(file) && existsSync(path.join(repoRoot, file)));
 const generated = (file) => generatedPatterns.some((pattern) => pattern.test(file));
 const ephemeral = (file) => ephemeralPatterns.some((pattern) => pattern.test(file));

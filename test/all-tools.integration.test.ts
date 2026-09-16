@@ -923,7 +923,13 @@ describe.sequential("all registered MCP tools", () => {
       stage: "brief",
     });
     expect(String(briefContext.request)).toContain("sample value");
-    expect(briefContext).toMatchObject({ requiredValidationProfile: "fast" });
+    expect(briefContext).toMatchObject({
+      requiredValidationProfile: "fast",
+      repositoryIndex: {
+        counts: expect.objectContaining({ total: expect.any(Number) }),
+        relevantFiles: expect.any(Array),
+      },
+    });
 
     expect(await callError("task_record", {
       repoPath: repo,

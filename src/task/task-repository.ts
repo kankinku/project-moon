@@ -9,7 +9,7 @@ import { bounded, exists, unique } from "./task-utils.js";
 
 const execFileAsync = promisify(execFile);
 const MAX_POLICY_CHARS = 60_000;
-const MAX_TRACKED_FILES = 600;
+const MAX_TRACKED_FILES = 160;
 
 export class TaskRepository {
   async command(executable: string, args: string[], options: { cwd?: string; timeoutMs?: number; maxBuffer?: number } = {}) {
@@ -43,10 +43,14 @@ export class TaskRepository {
     }
   }
 
+  async trackedFiles(repoRoot: string): Promise<string[]> {
+    const trackedRaw = await this.git(repoRoot, ["ls-files"]);
+    return trackedRaw ? trackedRaw.split("\n").filter(Boolean).sort() : [];
+  }
+
   async discover(repoRoot: string, configFile?: string): Promise<TaskManifest["discovery"]> {
     const topLevelEntries = (await readdir(repoRoot)).filter((entry) => entry !== ".git").sort();
-    const trackedRaw = await this.git(repoRoot, ["ls-files"]);
-    const allTracked = trackedRaw ? trackedRaw.split("\n").filter(Boolean) : [];
+    const allTracked = await this.trackedFiles(repoRoot);
     const packageScripts: Record<string, string> = {};
     const packagePath = path.join(repoRoot, "package.json");
     if (await exists(packagePath)) {

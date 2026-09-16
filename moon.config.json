@@ -104,7 +104,7 @@
       {
         "name": "task_infrastructure",
         "patterns": [
-          "^src/task/(task-repository|task-store|task-validation)\\.ts$"
+          "^src/task/(task-repository|task-store|task-validation|task-context-index)\\.ts$"
         ]
       }
     ],
@@ -142,6 +142,10 @@
       {
         "pattern": "^src/task/task-repository\\.ts$",
         "max": 200
+      },
+      {
+        "pattern": "^src/task/task-context-index\\.ts$",
+        "max": 220
       }
     ]
   },
