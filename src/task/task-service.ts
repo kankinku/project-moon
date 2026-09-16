@@ -5,6 +5,7 @@ import path from "node:path";
 import { loadHarnessConfig } from "./task-config.js";
 import { buildRepositoryIndex, repositoryContextSummary, type TaskRepositoryIndex } from "./task-context-index.js";
 import { TaskRepository } from "./task-repository.js";
+import { recordValidationMetrics, validationMetricsSummary } from "./task-metrics.js";
 import { classifyRisk } from "./task-risk.js";
 import { TaskStore } from "./task-store.js";
 import type {
@@ -269,6 +270,7 @@ export class TaskService {
 
     const passed = results.length === commands.length && results.every((result) => result.exitCode === 0 && !result.timedOut);
     const fingerprint = await this.repository.fingerprint(repoRoot);
+    const insights = await recordValidationMetrics(repoRoot, manifest.runId, results);
     manifest.validation = {
       profile,
       requiredProfile,
@@ -276,6 +278,7 @@ export class TaskService {
       fingerprint,
       completedAt: new Date().toISOString(),
       results,
+      insights,
     };
     manifest.state = passed ? "VERIFIED" : "VALIDATION_FAILED";
     await writeFile(path.join(manifest.artifactDir, "validation.json"), `${JSON.stringify(manifest.validation, null, 2)}\n`, "utf8");
@@ -343,6 +346,7 @@ export class TaskService {
     const validationFresh = Boolean(manifest.validation?.passed && manifest.validation.fingerprint === currentFingerprint);
     const stale = Boolean(manifest.validation && ["VERIFIED", "COMPLETE"].includes(manifest.state) && !validationFresh);
 
+    const metrics = await validationMetricsSummary(repoRoot, manifest.runId);
     return {
       ...manifest,
       risk: currentRisk,
@@ -354,6 +358,15 @@ export class TaskService {
       requiredValidationProfile: config.validation.riskProfiles[currentRisk.level],
       readyToComplete: manifest.state === "VERIFIED" && validationFresh,
       complete: manifest.state === "COMPLETE" && validationFresh,
+      validationMetrics: metrics,
+      harnessRecommendations: [
+        ...(metrics.regressionRecommended
+          ? ["Repeated deterministic validation failure detected; convert this failure mode into a regression test, rule, schema, or other programmatic guard."]
+          : []),
+        ...(metrics.performanceRegressionEvents > 0
+          ? ["Validation runtime regression detected; inspect slow tests/checks before expanding the harness further."]
+          : []),
+      ],
     };
   }
 

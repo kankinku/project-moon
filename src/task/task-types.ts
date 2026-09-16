@@ -42,6 +42,16 @@ export interface TaskValidationEvidence {
   fingerprint: string;
   completedAt: string;
   results: TaskValidationCommandResult[];
+  insights: {
+    repeatedFailures: Array<{ signature: string; command: string; count: number }>;
+    performanceRegressions: Array<{
+      command: string;
+      durationMs: number;
+      baselineMedianMs: number;
+      ratio: number;
+      samples: number;
+    }>;
+  };
 }
 
 export interface TaskManifest {
