@@ -6,12 +6,13 @@
 
 Project Moon은 AI가 단순히 명령어를 제안하는 수준을 넘어, 실제 개발 환경에서 명령을 실행하고 파일을 수정하며 Git 상태를 확인하고 테스트·빌드·코드 리뷰까지 수행할 수 있도록 구성한 MCP 서버입니다.
 
-현재 Project Moon은 **26개의 MCP 도구**를 제공합니다.
+현재 Project Moon은 **32개의 MCP 도구**를 제공합니다.
 
 | 영역 | 도구 수 | 주요 기능 |
 |---|---:|---|
 | 명령·프로세스 | 6 | 셸 명령, 스크립트, 장기 실행 프로세스, stdin, 출력 조회, 종료 |
 | 파일시스템 | 14 | 읽기, 쓰기, 패치, 업로드·다운로드, 해시, 복사, 이동, 삭제 |
+| AI 작업 하니스 | 6 | 구조 파악, 계획, 위험도 분류, 프로그램적 검증, 완료 상태 관리 |
 | 코드 리뷰 하니스 | 6 | Git 기준점 고정, 리뷰 상태, Worktree, QA, 검증 증거 관리 |
 
 ```text
@@ -30,11 +31,11 @@ ChatGPT / Codex / MCP Client
       Project Moon MCP
         127.0.0.1:3000
              │
-     ┌───────┼────────┐
-     ▼       ▼        ▼
-   명령     파일     리뷰 하니스
-     │       │        │
-     └───────┴────────┘
+     ┌───────┬──────────┬──────────┐
+     ▼       ▼          ▼          ▼
+   명령     파일     작업 하니스   리뷰 하니스
+     │       │          │          │
+     └───────┴──────────┴──────────┘
              │
              ▼
         개발 환경 / Git
@@ -79,6 +80,8 @@ AI가 상황 판단
 - 로그 조회 및 장애 분석
 - 파일 업로드·다운로드 및 패치
 - 테스트·타입체크·빌드 수행
+- 작업 전 구조 파악과 구현 계획 고정
+- 변경 위험도에 맞는 검증 프로필 자동 강제
 - Git Worktree 기반 격리 수정
 - 코드 리뷰와 QA 증거 저장
 - 리뷰 이후 브랜치가 변경되었는지 감지
@@ -289,6 +292,95 @@ exec_command
 > `remove_path`는 휴지통을 거치지 않고 실제 파일을 삭제합니다. `apply_patch`는 호스트의 `git apply --unsafe-paths`를 사용합니다.
 
 텍스트 파일은 UTF-8 경계를 보존하며, 바이너리 데이터는 Base64 방식으로 전송할 수 있습니다.
+
+---
+
+# AI 작업 하니스 — 6개
+
+Project Moon의 작업 하니스는 에이전트가 곧바로 코드를 수정하는 대신 **구조 파악 → 브리핑 → 계획 → 구현 → 프로그램적 검증 → 완료** 순서로 작업하도록 돕습니다. 작업 산출물은 `.moon/` 아래의 로컬 런타임 데이터로 저장되며 Git에는 포함되지 않습니다.
+
+| 도구 | 기능 |
+|---|---|
+| `task_start` | 현재 Git SHA와 하니스 정책을 고정하고 저장소 구조·위험도를 파악하여 작업 시작 |
+| `task_context` | `brief`, `plan`, `execute`, `validate` 단계별 최소 관련 컨텍스트 제공 |
+| `task_record` | 구조 브리핑과 구현 계획을 기록하고 상위 산출물 변경 시 기존 검증 무효화 |
+| `task_validate` | 실제 변경 경로를 다시 분석하고 위험도에 맞는 프로그램적 검증 실행 |
+| `task_complete` | 최신 검증을 통과했고 검증 후 코드가 바뀌지 않았을 때만 작업 완료 |
+| `task_status` | 위험도, 변경 파일, 검증 신선도, `STALE`, 실패 반복·성능 회귀 상태 조회 |
+
+일반적인 흐름:
+
+```text
+USER INTENT
+    ↓
+task_start
+    ↓
+task_context(brief)
+    ↓
+task_record(context_brief)
+    ↓
+task_context(plan)
+    ↓
+task_record(plan)
+    ↓
+구현
+    ↓
+task_validate
+    ↓
+task_complete
+```
+
+## 위험도 기반 검증
+
+기본 검증 강도는 다음과 같습니다.
+
+```text
+LOW    → fast
+MEDIUM → normal
+HIGH   → release
+```
+
+Moon은 요청 내용뿐 아니라 **실제로 변경된 파일 경로**를 다시 확인하여 위험도를 올릴 수 있습니다. 인증, 보안, 배포, 네트워크, `moon.config.json` 같은 영역은 높은 검증 강도를 요구하도록 구성할 수 있습니다. 에이전트가 더 약한 프로필을 지정해도 현재 위험도보다 낮은 검증은 거부됩니다.
+
+프로젝트별 규칙은 [`moon.config.json`](moon.config.json)에 선언합니다. 현재 Moon 자체의 `fast / normal / release` 프로필에는 Architecture Guard와 문서 감사가 항상 포함되고, 위험도가 높아질수록 타입체크·테스트·빌드가 추가됩니다.
+
+## 정책 고정과 STALE 방지
+
+`task_start`는 시작 시점의 `moon.config.json` 정책을 `.moon`에 복사하고 SHA-256으로 고정합니다. 따라서 작업 도중 에이전트가 현재 설정을 수정해 Architecture Guard나 검증 명령을 약화하더라도 **진행 중인 task run의 기준은 바뀌지 않습니다.** 정책 변경을 적용하려면 새 작업을 시작해야 합니다.
+
+`task_validate`는 검증한 시점의 HEAD, staged/unstaged diff, untracked 파일을 묶어 fingerprint를 생성합니다. 검증 이후 코드가 바뀌면 기존 증거는 더 이상 현재 코드의 증거가 아니므로 `task_status`가 `STALE`로 판단하고 `task_complete`를 차단합니다.
+
+## 컨텍스트 인덱스
+
+작업 시작 시 코드베이스에서 `.moon/.../repository-index.json`을 자동 생성합니다. 이는 영구 문서가 아니라 현재 Git 기준점에서 파생되는 캐시입니다. `task_context(brief)`는 저장소 전체를 덤프하는 대신 다음을 제공합니다.
+
+- 파일 종류별 개수
+- 모듈 단위 요약
+- 프로젝트 규칙과 ADR
+- 사용자 요청과 경로명이 실제로 연관된 파일 우선 목록
+- 제한된 크기의 tracked-file 표본
+
+목표는 컨텍스트 양을 늘리는 것이 아니라 **Signal / Noise 비율을 높이는 것**입니다.
+
+## 프로그램적 Architecture / Knowledge Guard
+
+Moon 자체에서는 다음 결정론적 검사기를 사용합니다.
+
+```bash
+npm run check:architecture
+npm run check:docs
+```
+
+`check:architecture`는 tracked 파일뿐 아니라 새로 생성된 untracked 소스도 검사하여 금지된 레이어 의존성과 파일 비대화를 탐지합니다. `check:docs`는 임시 plan/spec 문서의 영구 추적, 깨진 로컬 링크, 문서 예산 초과를 탐지합니다.
+
+## Failure → Harness Improvement
+
+검증 명령의 실행 시간과 실패 시그니처는 `.moon/metrics/`에 구조화된 메트릭으로 축적됩니다. 장기 메트릭에는 원시 stdout/stderr를 저장하지 않고 정규화된 실패 시그니처만 남깁니다.
+
+- 같은 결정론적 실패가 반복되면 regression test / rule / schema / validator로 승격할 후보라고 표시합니다.
+- 같은 검증 명령이 충분한 기준선 대비 크게 느려지면 validation runtime regression으로 표시합니다.
+
+즉 반복되는 문제를 “AI가 또 실수했다”로 끝내지 않고 **하니스가 다음 실수를 막을 수 있는지**를 확인하는 구조입니다.
 
 ---
 
@@ -698,6 +790,8 @@ https://project-moon.<tailnet>.ts.net/health
 저장소 기본 검증:
 
 ```bash
+npm run check:architecture
+npm run check:docs
 npm run typecheck
 npm test
 npm run build
@@ -711,11 +805,17 @@ npm run build
 - 프로세스 lifecycle
 - 파일 읽기·쓰기·패치
 - UTF-8 / Base64 경계
-- 모든 26개 도구 계약
+- 모든 32개 도구 계약
+- AI 작업 하니스 lifecycle과 위험도 상승
+- 검증 정책 고정 및 self-bypass 방지
+- 검증 후 변경에 대한 `STALE` 감지
+- Architecture dependency / 파일 크기 guard
+- 임시 문서·깨진 링크 audit
+- 요청 관련 파일을 우선하는 repository context index
+- 반복 실패 시그니처와 검증 성능 회귀 탐지
 - 코드 리뷰 하니스 lifecycle
 - Worktree
 - QA invalidation
-- STALE 감지
 
 실제 실행 중인 외부 MCP 서버를 대상으로 E2E 테스트할 수도 있습니다.
 
@@ -778,7 +878,11 @@ npx vitest run test/all-tools.integration.test.ts
 | `src/file-service.ts` | 호스트 파일시스템 구현 |
 | `src/file-tools.ts` | 파일 MCP 도구 |
 | `src/oauth.ts` | DCR, PKCE, 토큰 발급·갱신·폐기 |
+| `src/task/` | AI 작업 lifecycle, 위험도, 컨텍스트 인덱스, 검증·메트릭 |
 | `src/review/` | Git 코드 리뷰 상태 머신, Worktree, QA |
+| `moon.config.json` | 검증 프로필, 위험도, Architecture/Knowledge 정책 |
+| `scripts/check-architecture.mjs` | 레이어 의존성·파일 비대화 결정론적 검사 |
+| `scripts/audit-docs.mjs` | 임시 문서·문서 예산·로컬 링크 감사 |
 | `Start-PublicMcp.ps1` | Windows 공개 MCP 시작 및 Funnel 자동 구성 |
 | `Stop-PublicMcp.ps1` | 공개 MCP 중지 |
 | `Get-OAuthApprovalKey.ps1` | OAuth 승인 키 조회 |

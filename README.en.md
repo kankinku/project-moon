@@ -6,12 +6,13 @@
 
 Project Moon turns a Linux host into a development environment that ChatGPT or another MCP client can operate directly. Instead of copying commands, logs, patches, and test results back and forth, the client can run commands, control long-running processes, edit and transfer files, work with Git, and execute a reproducible code-review workflow on the host itself.
 
-Project Moon currently exposes **26 MCP tools** across three areas:
+Project Moon currently exposes **32 MCP tools** across four areas:
 
 | Area | Tools | Purpose |
 |---|---:|---|
 | Execution & processes | 6 | Shells, scripts, long-running jobs, stdin, polling, termination |
 | Filesystem | 14 | Read, write, patch, transfer, hash, copy, move, permissions, deletion |
+| AI task harness | 6 | Context alignment, planning, risk classification, programmatic validation, completion state |
 | Review harness | 6 | Pinned Git review context, artifacts, worktrees, QA evidence, review state |
 
 The code-review workflow is **model-independent**. The AI client performs reasoning; Project Moon owns the reproducible Git state, isolated worktree, persisted review artifacts, QA evidence, and staleness checks.
@@ -121,7 +122,51 @@ Available tools:
 - `write_file.fileMode` applies to new files and to overwrite/append operations.
 - `copy_path` reports a conflict when the destination exists and `force=false`.
 
-### 3. Provider-independent code-review harness
+### 3. AI-native task harness
+
+For substantial repository work, Project Moon can enforce a **discover → brief → plan → implement → validate → complete** lifecycle instead of letting an agent jump directly into code changes. Task artifacts live under `.moon/` and are intentionally local/ephemeral.
+
+| Tool | Purpose |
+|---|---|
+| `task_start` | Pin the Git baseline and harness policy, discover repository structure, and classify initial risk |
+| `task_context` | Return bounded stage-specific context for `brief`, `plan`, `execute`, or `validate` |
+| `task_record` | Persist the context brief and implementation plan; upstream changes invalidate downstream evidence |
+| `task_validate` | Reclassify risk from actual changed paths and run the minimum required programmatic validation profile |
+| `task_complete` | Complete only when the latest validation passed and the verified worktree fingerprint is unchanged |
+| `task_status` | Report risk, changed paths, validation freshness, `STALE`, repeated failures, and runtime regressions |
+
+Typical flow:
+
+```text
+USER INTENT
+  → task_start
+  → task_context(brief)
+  → task_record(context_brief)
+  → task_context(plan)
+  → task_record(plan)
+  → implementation
+  → task_validate
+  → task_complete
+```
+
+Risk maps to validation strength by policy (`low → fast`, `medium → normal`, `high → release`). Project Moon re-evaluates risk from the files that were actually changed, and a client cannot select a profile weaker than the current risk requires.
+
+At `task_start`, the effective harness policy is copied into the task run and protected by SHA-256. Risk classification and deterministic validators use that pinned policy, so weakening the live `moon.config.json` during the task cannot weaken the current run. `task_validate` also fingerprints HEAD, staged/unstaged changes, and untracked files; changes after validation make the effective state `STALE` and block completion.
+
+A derived repository index is generated under `.moon` for each task. It summarizes modules and prioritizes paths that are relevant to the user request rather than dumping the whole repository into model context. The index is a generated cache, not durable documentation.
+
+Project Moon's own validation profiles include deterministic architecture and documentation guards:
+
+```bash
+npm run check:architecture
+npm run check:docs
+```
+
+The architecture guard checks tracked and untracked source files for forbidden layer dependencies and configured size limits. The documentation audit rejects tracked/untracked ephemeral implementation plans, broken local links, and document-budget violations.
+
+Validation metrics under `.moon/metrics/` keep command hashes, durations, and normalized failure signatures instead of raw long-term stdout/stderr. Repeated deterministic failures are surfaced as candidates for a regression test/rule/schema, while significant validation-runtime slowdowns are flagged as harness performance regressions.
+
+### 4. Provider-independent code-review harness
 
 The review harness adapts the core workflow ideas of the MAFIA Code-Review Harness into Project Moon-native MCP tools. It does **not** require Claude Code or another specific model/provider at runtime.
 
@@ -479,12 +524,16 @@ sudo journalctl -u project-moon -o cat | grep '"event":"mcp_request"'
 The normal repository verification sequence is:
 
 ```bash
+npm run check:architecture
+npm run check:docs
 npm run typecheck
 npm test
 npm run build
 ```
 
-The test suite uses a real Streamable HTTP MCP client and covers authentication, stateless request handling, process lifecycle, file operations, UTF-8/base64 boundaries, patch application, OAuth, all 26 tool contracts, and the review-harness lifecycle.
+The test suite uses a real Streamable HTTP MCP client and covers authentication, stateless request handling, process lifecycle, file operations, UTF-8/base64 boundaries, patch application, OAuth, all 32 tool contracts, and the review-harness lifecycle.
+
+The task-harness coverage verifies risk escalation, pinned-policy anti-bypass behavior, validation fingerprints/`STALE`, compact repository context, architecture/document guards, repeated failure signatures, and validation-runtime regression detection.
 
 The review E2E path specifically verifies:
 
@@ -499,7 +548,7 @@ The review E2E path specifically verifies:
 
 ### External E2E verification
 
-From a separate source checkout with development dependencies installed, all 26 tools can be exercised against a running HTTPS endpoint:
+From a separate source checkout with development dependencies installed, all 32 tools can be exercised against a running HTTPS endpoint:
 
 ```bash
 MCP_E2E_URL='https://mcp.example.com/mcp' \
@@ -552,13 +601,17 @@ See [`.env.example`](.env.example) and [`deploy/project-moon.env.example`](deplo
 | `src/file-service.ts` | Host filesystem implementation |
 | `src/file-tools.ts` | Filesystem MCP schemas and registration |
 | `src/oauth.ts` | DCR, PKCE, token issuance/refresh/revocation, approval UI |
+| `src/task/` | AI task lifecycle, risk policy, repository context index, validation, and metrics |
 | `src/review/` | Provider-independent Git review state machine, tools, QA, and worktrees |
+| `moon.config.json` | Validation profiles, risk rules, architecture boundaries, and knowledge policy |
+| `scripts/check-architecture.mjs` | Deterministic architecture dependency/size guard |
+| `scripts/audit-docs.mjs` | Ephemeral-document, budget, and local-link audit |
 | `docs/code-convention.yaml` | Project-specific review conventions |
 | `docs/adr.yaml` | Architecture decisions consumed by review criteria generation |
 | `harnesses/code-review/` | Review workflow documentation and prompt contracts |
 | `vendor/mafia-codereview-harness/` | Upstream review-harness provenance |
 | `deploy/` | systemd, environment-file, and Nginx examples |
-| `test/all-tools.integration.test.ts` | Real MCP integration coverage for all 26 tools |
+| `test/all-tools.integration.test.ts` | Real MCP integration coverage for all 32 tools |
 | `test/` | Configuration, process, file, MCP, auth, OAuth, and integration tests |
 
 ## Upstream and attribution
