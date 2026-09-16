@@ -2,7 +2,7 @@
 
 ## Goal
 
-Allow the existing `project-moon-local` Docker service to use the host NVIDIA GPU and run `nvidia-smi` without making GPU hardware a requirement for the normal CPU deployment. Preserve the current Nginx, OAuth, Cloudflare tunnel, storage, and host-isolation behavior.
+Allow the existing `project-moon-local` Docker service to use the host NVIDIA GPU and run `nvidia-smi` without making GPU hardware a requirement for the normal CPU deployment. Preserve the current Nginx, OAuth, Tailscale Funnel, storage, and host-isolation behavior.
 
 ## Current Evidence
 
@@ -26,7 +26,7 @@ The base Ubuntu application image remains unchanged. NVIDIA Container Toolkit in
 - Requests all GPUs for `workmachine` using the Docker Compose GPU device contract.
 - Sets `NVIDIA_VISIBLE_DEVICES=all`.
 - Sets `NVIDIA_DRIVER_CAPABILITIES=compute,utility`.
-- Does not grant GPU access to `cloudflared`.
+- Does not involve the host-level Tailscale process in Docker GPU access.
 - Does not add privileged mode, Docker socket access, or new host mounts.
 
 ### Startup integration
@@ -36,7 +36,7 @@ The base Ubuntu application image remains unchanged. NVIDIA Container Toolkit in
 1. Verify that host `nvidia-smi` succeeds.
 2. Verify that Docker advertises the NVIDIA runtime.
 3. include the GPU Compose overlay in every Compose invocation used during the start/recreate flow.
-4. Recreate `workmachine` with its GPU device request while preserving the OAuth state volume and Cloudflare service.
+4. Recreate `workmachine` with its GPU device request while preserving the OAuth state volume and host-level Tailscale Funnel configuration.
 5. Verify `nvidia-smi` inside `project-moon-local` before reporting success.
 
 Calling `Start-PublicMcp.ps1` without `-Gpu` retains the current CPU behavior.
@@ -79,6 +79,6 @@ Implementation is complete only when all of the following pass:
 ## Non-Goals
 
 - Installing PyTorch, TensorFlow, Ollama, CUDA compiler tools, or a model runtime.
-- Exposing the GPU to `cloudflared`.
+- Changing host-level Tailscale/Funnel settings as part of GPU enablement.
 - Selecting or partitioning individual GPUs; this host currently has one NVIDIA GPU.
 - Changing the public hostname, OAuth protocol, MCP tool inventory, or shared-directory policy.

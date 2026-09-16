@@ -1,5 +1,8 @@
 # Public OAuth MCP design
 
+> **Superseded (2026-09-16):** Persistent ChatGPT MCP now uses host-level Tailscale Funnel. See `docs/superpowers/specs/2026-09-16-tailscale-funnel-mcp-design.md`.
+
+
 ## Goal
 
 Expose the existing Docker-isolated `project-moon` through an HTTPS URL, keep Nginx as the application reverse proxy, and require the built-in OAuth 2.1 authorization server for every MCP tool call.

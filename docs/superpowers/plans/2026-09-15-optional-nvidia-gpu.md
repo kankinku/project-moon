@@ -177,7 +177,7 @@ Expected: 39 tests pass, typecheck/build exit zero, zero production vulnerabilit
 
 - [ ] **Step 5: Recheck isolation and secrets**
 
-Confirm port host IP is `127.0.0.1`, only `shared/` is host-bound, Docker socket is absent, `cloudflared` has no GPU request, `git diff --check` passes, and changed files contain no credential patterns.
+Confirm port host IP is `127.0.0.1`, only `shared/` is host-bound, Docker socket is absent, the host-level Tailscale process is outside Docker and has no GPU request, `git diff --check` passes, and changed files contain no credential patterns.
 
 - [ ] **Step 6: Commit the implementation**
 

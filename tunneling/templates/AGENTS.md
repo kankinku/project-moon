@@ -8,11 +8,11 @@
 
 ## Public Access
 
-- This workmachine is connected to its public domain through Cloudflare Tunnel.
+- This workmachine is connected to its public domain through host-level Tailscale Funnel.
 - Public domain: `{{PUBLIC_DOMAIN}}`
 - Public base URL: `{{PUBLIC_BASE_URL}}`
 - Public MCP endpoint: `{{PUBLIC_MCP_URL}}`
-- Cloudflare Tunnel forwards public requests to Nginx at `http://localhost:2999`.
+- Tailscale Funnel forwards public HTTPS requests to the host loopback gateway at `http://127.0.0.1:2999`.
 - Nginx forwards the protected project-moon paths, including `/mcp`, to `http://127.0.0.1:3000`.
 
 ## Instruction Scope
@@ -55,7 +55,7 @@ Only modify these resources when the user explicitly requests maintenance of wor
 - Validate configuration before applying it.
 - Apply changes with `nginx -t && nginx -s reload`.
 - Do not stop or restart Nginx when a reload is sufficient.
-- Do not modify Cloudflare Tunnel settings unless explicitly requested.
+- Do not modify the host Tailscale identity or Funnel settings unless explicitly requested.
 
 ## Safety
 

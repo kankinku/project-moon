@@ -1,5 +1,8 @@
 # Public OAuth MCP Implementation Plan
 
+> **Superseded (2026-09-16):** Persistent ChatGPT MCP now uses host-level Tailscale Funnel. See `docs/superpowers/specs/2026-09-16-tailscale-funnel-mcp-design.md`.
+
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Publish the Docker-isolated MCP server through an HTTPS Quick Tunnel and enforce its built-in OAuth flow.

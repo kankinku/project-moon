@@ -1,107 +1,133 @@
 # Local Docker MCP setup
 
-This deployment runs `project-moon` in a Docker container and exposes its HTTP endpoint only to this Windows computer at `127.0.0.1:2999`.
+Project Moon runs in Docker and keeps its HTTP ingress bound to `127.0.0.1:2999`. Persistent public access uses **Tailscale Funnel on the Windows host**, not a tunnel sidecar inside Docker.
 
-The local Docker image is built directly from the currently checked-out Project Moon source. Pull or switch to the Git revision you want first, run the project checks, then rebuild the image so the container exactly matches that checkout.
+```text
+ChatGPT
+  -> https://project-moon.<tailnet>.ts.net/mcp
+  -> Tailscale Funnel (HTTPS 443)
+  -> Windows 127.0.0.1:2999
+  -> Docker/Nginx
+  -> Project Moon :3000
+```
 
-The build overlays the audited local `package-lock.json` on that pinned source before `npm ci`. This keeps the application source reproducible while allowing security-only transitive dependency updates to be verified and deployed.
+The Tailscale DNS name is stable for the machine. `Start-PublicMcp.ps1` pins the machine name to `project-moon`, derives the actual `*.ts.net` hostname from `tailscale status --json`, writes the ignored `tunneling/.env.public`, starts Project Moon with OAuth enabled, then exposes port 2999 with a background Funnel.
 
 ## Security boundary
 
-- Only [`shared/`](shared/) is mounted into the container as `/shared`.
-- The Docker socket is not mounted. The MCP cannot create, stop, or inspect host Docker containers.
-- The endpoint has no built-in Bearer or OAuth authentication because it listens only on loopback. Do not change the port mapping to `2999:2999` or `0.0.0.0:2999:2999`.
-- OpenAI Secure MCP Tunnel is the only intended remote path. It authenticates the OpenAI product to the tunnel control plane.
-- Tools can permanently alter files below `shared/`. Do not place credentials or unrelated personal files there.
+- Only [`shared/`](shared/) is mounted into the workmachine as `/shared`.
+- The Docker socket is not mounted.
+- Port `2999` remains host-loopback-only (`127.0.0.1:2999`). It is not bound to the LAN or directly to the public internet.
+- Public traffic reaches the loopback listener through the host Tailscale daemon and Funnel.
+- Public mode uses Project Moon built-in OAuth with `MCP_OAUTH_ENABLED=true` and `MCP_ALLOW_NO_AUTH=false`.
+- There is no Cloudflare account, custom domain, tunnel token, Worker, Durable Object, or `cloudflared` runtime dependency.
+- Tailscale Funnel is a public-internet ingress. Keep Project Moon OAuth enabled whenever Funnel is active.
 
-## Run locally
+## Local-only mode
 
-1. Start Docker Desktop and wait until its engine is running.
-2. Copy the local-only template:
+1. Start Docker Desktop.
+2. Create the non-secret local configuration:
 
    ```powershell
    Copy-Item tunneling/.env.local.example tunneling/.env.local
    ```
 
-3. Build and start:
+3. Start only `workmachine`:
 
    ```powershell
-   docker compose --env-file tunneling/.env.local -f tunneling/docker-compose.local.yml up -d --build
+   docker compose --env-file tunneling/.env.local -f tunneling/docker-compose.local.yml up -d --build workmachine
    ```
 
-4. Verify the endpoint:
+4. Verify:
 
    ```powershell
    curl.exe -fsS http://127.0.0.1:2999/health
-   docker compose --env-file tunneling/.env.local -f tunneling/docker-compose.local.yml ps
    ```
 
-5. Inspect or stop it when needed:
+The persistent runtime state uses the Docker volume `tunneling_project-moon-local-state`.
 
-   ```powershell
-   docker compose --env-file tunneling/.env.local -f tunneling/docker-compose.local.yml logs -f
-   docker compose --env-file tunneling/.env.local -f tunneling/docker-compose.local.yml down
-   ```
+## One-time Tailscale prerequisite
 
-The persistent runtime state uses the Docker volume `tunneling_project-moon-local-state`, separate from host project files.
+Install Tailscale on Windows and sign in to a tailnet. Funnel requires MagicDNS, HTTPS certificates, and Funnel permission on the tailnet. The first Funnel command can request approval in the Tailscale web UI.
 
-## Connect through OpenAI Secure MCP Tunnel
+Run public setup from an **Administrator PowerShell**. Windows unattended mode is enabled so Tailscale can remain connected when no interactive user is logged in.
 
-1. In [OpenAI Platform tunnel settings](https://platform.openai.com/settings/organization/tunnels), create a tunnel and obtain its `tunnel_id` plus a runtime API key. Do not save either value in this repository.
-2. Download `tunnel-client` from the Platform tunnel page and configure it on this PC to reach `http://127.0.0.1:2999/mcp`.
-3. Keep `tunnel-client run` healthy; it requires outbound HTTPS but no inbound public port.
-4. In ChatGPT developer-mode app creation, choose **Tunnel** and select or paste the `tunnel_id`.
+You do not need to buy a domain. The public URL is the machine's stable Tailscale DNS name, for example:
 
-The tunnel client and the Docker health endpoint must be running whenever ChatGPT needs these MCP tools.
+```text
+https://project-moon.example-tailnet.ts.net/mcp
+```
 
-## Public HTTPS URL with built-in OAuth
+## Start the public MCP endpoint
 
-Run the bootstrap script from PowerShell:
+Create `.env.local` once if it does not exist:
 
 ```powershell
-Set-Location C:\Users\<user>\Desktop\project-moon
+Copy-Item tunneling/.env.local.example tunneling/.env.local
+```
+
+Then run:
+
+```powershell
 pwsh -NoProfile -ExecutionPolicy Bypass -File .\Start-PublicMcp.ps1
 ```
 
-It starts a Cloudflare Quick Tunnel, records its generated public URL in the ignored `tunneling/.env.public` file, enables built-in OAuth, and recreates only the work container. Retrieve the approval key only when the OAuth approval page asks for it:
+The helper performs this sequence:
+
+1. Checks that the Tailscale CLI is installed and the shell is elevated.
+2. Runs Tailscale in unattended mode with machine hostname `project-moon`.
+3. Reads `Self.DNSName` from `tailscale status --json` and requires a `*.ts.net` name.
+4. Generates `tunneling/.env.public` with that stable URL and OAuth enabled.
+5. Starts/rebuilds only the `workmachine` Docker service.
+6. Verifies local OAuth health on `127.0.0.1:2999` before public exposure.
+7. Runs `tailscale funnel --bg --yes 2999`.
+8. Verifies the same Project Moon health endpoint through the public `https://...ts.net` URL.
+
+Successful output includes:
+
+```text
+PUBLIC_MCP_URL=https://project-moon.<tailnet>.ts.net/mcp
+PUBLIC_HEALTH_URL=https://project-moon.<tailnet>.ts.net/health
+PUBLIC_TRANSPORT=tailscale-funnel
+OAUTH_ENABLED=true
+```
+
+A background Funnel persists across device or Tailscale restarts. The ChatGPT MCP registration therefore keeps the same URL as long as this Tailscale machine identity/DNS name is retained.
+
+## Verify OAuth and MCP
+
+Retrieve the OAuth approval key only when the authorization page requests it:
 
 ```powershell
 pwsh -NoProfile -ExecutionPolicy Bypass -File .\Get-OAuthApprovalKey.ps1
 ```
 
-Verify the complete public DCR, PKCE, token, refresh, and authenticated MCP flow without printing any token:
+Run the existing end-to-end OAuth verifier:
 
 ```powershell
 node .\scripts\verify-public-oauth.mjs
 ```
 
-## Optional NVIDIA GPU access
+It checks discovery, unauthenticated rejection, DCR, PKCE, token exchange, refresh rotation, revocation, and authenticated MCP initialization without printing access tokens.
 
-The normal start command remains CPU-portable. On this NVIDIA host, add `-Gpu` to merge the GPU-only Compose overlay and recreate `workmachine` with access to all NVIDIA GPUs:
-
-```powershell
-pwsh -NoProfile -ExecutionPolicy Bypass -File .\Start-PublicMcp.ps1 -Gpu
-```
-
-The GPU path checks host `nvidia-smi` and the Docker NVIDIA runtime before changing containers. It grants only the `compute,utility` driver capabilities to `workmachine`; `cloudflared` receives no GPU device. Verify the live host, Docker, and container state without printing OAuth secrets:
-
-```powershell
-pwsh -NoProfile -ExecutionPolicy Bypass -File .\Test-Gpu.ps1
-docker exec project-moon-local nvidia-smi
-```
-
-This exposes the host driver and GPU to container workloads but does not install PyTorch, TensorFlow, Ollama, `nvcc`, or another CUDA application framework. Install a workload-specific userspace framework separately when needed.
-
-To return to CPU-only mode while retaining the OAuth state and approval key volume, run the start script again without `-Gpu`:
-
-```powershell
-pwsh -NoProfile -ExecutionPolicy Bypass -File .\Start-PublicMcp.ps1
-```
-
-Stop the public endpoint without deleting the persistent OAuth state volume:
+## Stop public access
 
 ```powershell
 pwsh -NoProfile -ExecutionPolicy Bypass -File .\Stop-PublicMcp.ps1
 ```
 
-The `trycloudflare.com` hostname belongs to the current Quick Tunnel process. If `project-moon-cloudflared` is restarted or recreated, run `Start-PublicMcp.ps1` again and update the MCP URL in ChatGPT. A stable production URL requires an owned domain and a named tunnel.
+The stop helper disables the HTTPS 443 Funnel listener used by Project Moon and stops `workmachine`, while retaining the OAuth state volume and the Tailscale device identity.
+
+## Optional NVIDIA GPU access
+
+Add `-Gpu` to the same public start command:
+
+```powershell
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\Start-PublicMcp.ps1 -Gpu
+```
+
+The GPU preflight checks host `nvidia-smi` and the Docker NVIDIA runtime. Tailscale runs on the Windows host and has no Docker GPU access.
+
+## Optional OpenAI Secure MCP Tunnel
+
+OpenAI Secure MCP Tunnel remains an alternative transport. Point its tunnel client at `http://127.0.0.1:2999/mcp`. Do not run it simultaneously as the canonical public transport unless you intentionally want two public ingress paths.

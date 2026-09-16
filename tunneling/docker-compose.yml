@@ -9,6 +9,8 @@ services:
     container_name: workmachine
     hostname: workmachine
     restart: unless-stopped
+    ports:
+      - "127.0.0.1:2999:2999"
     environment:
       TZ: "${TZ:-UTC}"
       MCP_PUBLIC_URL: "${MCP_PUBLIC_URL:?Set MCP_PUBLIC_URL in .env}"
@@ -24,21 +26,6 @@ services:
         source: project-moon-state
         target: /var/lib/project-moon
     stop_grace_period: 30s
-
-  cloudflared:
-    image: cloudflare/cloudflared:latest
-    container_name: chatgpt-cloudflared
-    restart: unless-stopped
-    network_mode: "service:workmachine"
-    depends_on:
-      workmachine:
-        condition: service_healthy
-    command:
-      - tunnel
-      - --no-autoupdate
-      - run
-      - --token
-      - "${CLOUDFLARE_TUNNEL_TOKEN:?Set CLOUDFLARE_TUNNEL_TOKEN in .env}"
 
 volumes:
   project-moon-state:

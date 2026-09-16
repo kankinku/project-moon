@@ -1,94 +1,78 @@
-# workmachine
+# Project Moon workmachine deployment
 
-A long-running Ubuntu development machine controlled through project-moon MCP.
-
-On first start, workmachine creates `/shared/AGENTS.md` from `templates/AGENTS.md` if the file does not already exist. Existing instructions are never overwritten.
-
-## Configure
-
-Run commands from the directory containing `docker-compose.yml`:
-
-```bash
-cd /absolute/path/to/workmachine
-cp .env.example .env
-```
-
-Set these values in `.env`:
-
-- `SHARED_PATH`: absolute host directory mounted at `/shared`
-- `MCP_PUBLIC_URL`: public HTTPS base URL without `/mcp`
-- `CLOUDFLARE_TUNNEL_TOKEN`: Cloudflare Tunnel token
-
-Example for macOS:
-
-```dotenv
-SHARED_PATH=/Users/yourname/Documents/workspace
-MCP_PUBLIC_URL=https://example.com
-CLOUDFLARE_TUNNEL_TOKEN=replace-with-your-real-tunnel-token
-TZ=Asia/Seoul
-```
-
-This example creates the public MCP endpoint `https://example.com/mcp`. Use an absolute path for `SHARED_PATH`, do not add a trailing slash to `MCP_PUBLIC_URL`, and never commit the populated `.env` file.
-
-In the Cloudflare Tunnel public-hostname settings, set the service URL to:
+Project Moon runs in Docker while **Tailscale Funnel runs on the host** and provides the stable public HTTPS address used by ChatGPT MCP.
 
 ```text
-http://localhost:2999
+ChatGPT
+  -> https://project-moon.<tailnet>.ts.net/mcp
+  -> Tailscale Funnel
+  -> host 127.0.0.1:2999
+  -> Nginx
+  -> Project Moon :3000
 ```
 
-## Start
+There is no tunnel container, domain purchase, DNS record, or tunnel credential stored in this repository.
 
-From the directory containing `docker-compose.yml`:
+## Docker boundary
 
-```bash
-cd /absolute/path/to/workmachine
-docker compose -p workmachine up -d --build
-docker compose -p workmachine ps
-docker compose -p workmachine logs -f
+`docker-compose.local.yml` publishes Nginx only to `127.0.0.1:2999`. Tailscale Funnel proxies the host's loopback service to public HTTPS. The Docker socket is not mounted and only `shared/` is bind-mounted into the workmachine.
+
+## Local configuration
+
+```powershell
+Copy-Item tunneling/.env.local.example tunneling/.env.local
 ```
 
-To rebuild without reusing layers from previous Docker builds, then recreate the
-containers from the new image:
+Local-only start:
 
-```bash
-docker compose -p workmachine build --no-cache --pull
-docker compose -p workmachine up -d --force-recreate
+```powershell
+docker compose --env-file tunneling/.env.local -f tunneling/docker-compose.local.yml up -d --build workmachine
 ```
 
-This keeps the existing `project-moon-state` volume and its OAuth state.
+## Public start on Windows
 
-To run from any directory, specify both the Compose file and environment file:
+Install Tailscale, sign in, then use Administrator PowerShell:
 
-```bash
-docker compose -p workmachine -f /absolute/path/to/workmachine/docker-compose.yml --env-file /absolute/path/to/workmachine/.env up -d --build
+```powershell
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\Start-PublicMcp.ps1
 ```
 
-Nginx listens on port 2999 and forwards project-moon routes to port 3000.
+The helper pins the Tailscale machine name to `project-moon`, discovers its stable `*.ts.net` DNS name, generates the ignored `.env.public`, starts Project Moon with OAuth enabled, and enables a persistent background Funnel to `127.0.0.1:2999`.
 
-Read the generated OAuth approval key:
+Tailscale Funnel requires MagicDNS, HTTPS support, and Funnel permission on the tailnet. A first-time setup can require browser approval.
 
-```bash
-docker compose -p workmachine exec workmachine cat /var/lib/project-moon/oauth-approval-key
+## Generic host deployment
+
+`tunneling/docker-compose.yml` also exposes `127.0.0.1:2999` only. On a Linux host, install Tailscale on the host OS and expose the same loopback port with Funnel; set `MCP_PUBLIC_URL` in `.env` to that host's stable `*.ts.net` URL.
+
+## OAuth
+
+Public mode must use:
+
+```dotenv
+MCP_ENDPOINT=/mcp
+MCP_OAUTH_ENABLED=true
+MCP_ALLOW_NO_AUTH=false
 ```
 
-## Add an application route
+On Windows these values and `MCP_PUBLIC_URL` are generated automatically in `tunneling/.env.public` by `Start-PublicMcp.ps1`.
 
-Create a file under `${SHARED_PATH}/nginx/routes.d`, for example `20-newapp.conf`:
+Retrieve the approval key only when needed:
 
-```nginx
-location = /newapp {
-    return 308 /newapp/;
-}
-
-location ^~ /newapp/ {
-    include /etc/nginx/snippets/workmachine-proxy.conf;
-    proxy_pass http://127.0.0.1:5000/;
-}
+```powershell
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\Get-OAuthApprovalKey.ps1
 ```
 
-Validate and reload without restarting the container:
+Verify the complete OAuth/MCP flow:
 
-```bash
-docker compose -p workmachine exec workmachine nginx -t
-docker compose -p workmachine exec workmachine nginx -s reload
+```powershell
+node .\scripts\verify-public-oauth.mjs
 ```
+
+## Stop
+
+```powershell
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\Stop-PublicMcp.ps1
+```
+
+This disables the Project Moon HTTPS Funnel listener and stops the workmachine without deleting persistent OAuth state.
