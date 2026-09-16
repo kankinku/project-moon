@@ -1,68 +1,558 @@
 # Project Moon
 
-> A full-access remote development MCP runtime for trusted AI clients.
+**한국어** | [English](README.en.md)
 
-Project Moon turns a Linux host into a development environment that ChatGPT or another MCP client can operate directly. Instead of copying commands, logs, patches, and test results back and forth, the client can run commands, control long-running processes, edit and transfer files, work with Git, and execute a reproducible code-review workflow on the host itself.
+> ChatGPT·Codex·기타 MCP 클라이언트가 개발용 컴퓨터를 직접 조작할 수 있도록 연결하는 **풀 액세스 원격 개발 MCP 런타임**입니다.
 
-Project Moon currently exposes **26 MCP tools** across three areas:
+Project Moon은 AI가 단순히 명령어를 제안하는 수준을 넘어, 실제 개발 환경에서 명령을 실행하고 파일을 수정하며 Git 상태를 확인하고 테스트·빌드·코드 리뷰까지 수행할 수 있도록 구성한 MCP 서버입니다.
 
-| Area | Tools | Purpose |
+현재 Project Moon은 **26개의 MCP 도구**를 제공합니다.
+
+| 영역 | 도구 수 | 주요 기능 |
 |---|---:|---|
-| Execution & processes | 6 | Shells, scripts, long-running jobs, stdin, polling, termination |
-| Filesystem | 14 | Read, write, patch, transfer, hash, copy, move, permissions, deletion |
-| Review harness | 6 | Pinned Git review context, artifacts, worktrees, QA evidence, review state |
-
-The code-review workflow is **model-independent**. The AI client performs reasoning; Project Moon owns the reproducible Git state, isolated worktree, persisted review artifacts, QA evidence, and staleness checks.
+| 명령·프로세스 | 6 | 셸 명령, 스크립트, 장기 실행 프로세스, stdin, 출력 조회, 종료 |
+| 파일시스템 | 14 | 읽기, 쓰기, 패치, 업로드·다운로드, 해시, 복사, 이동, 삭제 |
+| 코드 리뷰 하니스 | 6 | Git 기준점 고정, 리뷰 상태, Worktree, QA, 검증 증거 관리 |
 
 ```text
-                         MCP over HTTPS
-┌───────────────────┐  ───────────────▶  ┌─────────────────────────────┐
-│ ChatGPT / MCP     │                    │ Project Moon                │
-│ client            │  ◀───────────────  │                             │
-└───────────────────┘   tool results     │  Execution / Processes      │
-                                         │  Filesystem                 │
-                                         │  Review Harness             │
-                                         └──────────────┬──────────────┘
-                                                        │ full host access
-                                                        ▼
-                                         ┌─────────────────────────────┐
-                                         │ Linux VPS / EC2 / server    │
-                                         │ Git · Node · services · etc │
-                                         └─────────────────────────────┘
+ChatGPT / Codex / MCP Client
+             │
+             │ MCP over HTTPS + OAuth 2.1
+             ▼
+       Tailscale Funnel
+             │
+             ▼
+      127.0.0.1:2999
+             │
+           Nginx
+             │
+             ▼
+      Project Moon MCP
+        127.0.0.1:3000
+             │
+     ┌───────┼────────┐
+     ▼       ▼        ▼
+   명령     파일     리뷰 하니스
+     │       │        │
+     └───────┴────────┘
+             │
+             ▼
+        개발 환경 / Git
 ```
 
 > [!CAUTION]
-> Project Moon is intentionally **not a sandbox**. It has no command allowlist, path restriction, per-command approval gate, or privilege reduction layer. If it runs as `root`, an authenticated client effectively has root-level host control. Use it only on systems you intend the connected client to administer, require strong authentication, and expose it through HTTPS.
+> Project Moon은 **샌드박스가 아닙니다.** 명령 허용 목록, 경로 제한, 명령별 승인 게이트, 권한 축소 계층을 기본 제공하지 않습니다. Project Moon을 높은 권한으로 실행하면 인증된 AI 클라이언트 역시 그 권한으로 시스템을 제어할 수 있습니다. 신뢰할 수 있는 개인 개발 환경에서만 사용하고, 인터넷에 공개할 때는 반드시 HTTPS와 강한 인증을 사용하세요.
 
-## Why Project Moon?
+---
 
-Most AI coding workflows still have a boundary between reasoning and execution: the model proposes a command, a person runs it, the output is pasted back, and the cycle repeats. Project Moon removes that boundary for trusted environments while preserving explicit machine-readable tool contracts.
+## Project Moon이 필요한 이유
 
-It is designed for workflows such as:
+일반적인 AI 코딩 흐름은 다음과 같습니다.
 
-- inspecting a remote machine and diagnosing service failures;
-- cloning, modifying, building, and testing repositories;
-- running interactive or long-lived commands and polling their output later;
-- transferring files without giving the client a separate SSH/SFTP integration;
-- applying Git patches and managing repository state;
-- reviewing a change against its intended design and project-specific criteria;
-- isolating review/fix work in a Git worktree and retaining QA evidence;
-- detecting when a previously reviewed branch has moved and the review is stale.
+```text
+AI가 명령 제안
+→ 사람이 터미널에 입력
+→ 결과 복사
+→ AI에게 전달
+→ 다음 명령 제안
+```
 
-Project Moon is best suited to a **trusted development or operations host**. It is not intended to be a multi-tenant execution sandbox or an untrusted public code runner.
+Project Moon을 사용하면 다음과 같이 바뀝니다.
 
-## Quick start
+```text
+AI가 상황 판단
+→ Moon으로 직접 명령 실행
+→ 결과 확인
+→ 파일 수정
+→ 테스트·빌드
+→ Git 검증
+→ 필요하면 코드 리뷰·수정
+```
 
-### Requirements
+따라서 다음 작업을 하나의 AI 세션 안에서 처리할 수 있습니다.
 
-- Node.js 22 or later and npm
-- Linux recommended; the production examples target systemd and Nginx
+- 컴퓨터 및 서버 상태 점검
+- Git 저장소 clone / pull / diff / commit
+- 프로젝트 코드 수정
+- npm, Python, Docker 등 개발 명령 실행
+- 장시간 실행되는 프로세스 관리
+- 로그 조회 및 장애 분석
+- 파일 업로드·다운로드 및 패치
+- 테스트·타입체크·빌드 수행
+- Git Worktree 기반 격리 수정
+- 코드 리뷰와 QA 증거 저장
+- 리뷰 이후 브랜치가 변경되었는지 감지
+
+---
+
+# Windows + Docker 빠른 시작
+
+Project Moon을 개인 Windows 개발 PC에서 사용하는 경우 현재 권장 구성은 다음과 같습니다.
+
+```text
+Windows
+├─ Docker Desktop
+├─ Tailscale
+├─ Project Moon 저장소
+│  ├─ Start-PublicMcp.ps1
+│  ├─ Stop-PublicMcp.ps1
+│  └─ shared/
+└─ Tailscale Funnel
+       ↓
+https://project-moon.<tailnet>.ts.net/mcp
+```
+
+## 1. 요구 사항
+
+다음 프로그램이 필요합니다.
+
+- Windows 10/11
+- PowerShell
 - Git
-- OpenSSL for generating authentication secrets
-- Python 3 only if you want to execute Python through `run_script`
-- A stable HTTPS endpoint when connecting from a remote MCP client over the public internet
+- Docker Desktop
+- Tailscale
 
-### Run locally
+GPU 기능을 사용할 경우 추가로 다음이 필요합니다.
+
+- NVIDIA GPU
+- 정상 동작하는 NVIDIA 드라이버
+- Docker의 NVIDIA GPU 런타임 지원
+
+## 2. 저장소 받기
+
+```powershell
+git clone https://github.com/kankinku/project-moon.git
+cd project-moon
+```
+
+이미 clone한 경우:
+
+```powershell
+git pull --ff-only origin main
+```
+
+## 3. 로컬 설정 준비
+
+```powershell
+Copy-Item tunneling\.env.local.example tunneling\.env.local
+New-Item -ItemType Directory -Force shared
+```
+
+`tunneling/.env.local`은 로컬 전용 파일이며 Git에 포함되지 않습니다.
+
+기본 예시는 다음과 같습니다.
+
+```dotenv
+TZ=Asia/Seoul
+WORKMACHINE_IMAGE=project-moon-local:0.1.0
+```
+
+`shared/` 디렉터리는 컨테이너의 `/shared`로 연결됩니다. AI가 직접 다룰 프로젝트와 파일을 이 영역에 둘 수 있습니다.
+
+## 4. Project Moon 실행
+
+**관리자 권한 PowerShell**에서 실행합니다.
+
+```powershell
+.\Start-PublicMcp.ps1
+```
+
+스크립트는 자동으로 다음 작업을 수행합니다.
+
+1. Tailscale 연결 상태 확인
+2. Tailscale 호스트명을 `project-moon`으로 설정
+3. Tailscale Funnel 활성화
+4. 공개 `*.ts.net` HTTPS 주소 자동 감지
+5. OAuth 공개 URL 자동 구성
+6. Docker Compose 설정 검증
+7. Project Moon 이미지 빌드 및 컨테이너 시작
+8. 로컬 `/health` 검증
+9. 공개 `/health` 검증
+
+정상 실행되면 다음과 유사한 결과가 출력됩니다.
+
+```text
+PUBLIC_MCP_URL=https://project-moon.<tailnet>.ts.net/mcp
+PUBLIC_HEALTH_URL=https://project-moon.<tailnet>.ts.net/health
+PUBLIC_TRANSPORT=tailscale-funnel
+OAUTH_ENABLED=true
+GPU_ENABLED=false
+```
+
+> 최초 Tailscale Funnel 사용 시 Tailscale에서 Funnel 활성화를 승인해야 할 수 있습니다.
+
+## 5. OAuth 승인 키 확인
+
+Project Moon의 OAuth 연결 승인에 사용하는 키는 다음 명령으로 확인할 수 있습니다.
+
+```powershell
+.\Get-OAuthApprovalKey.ps1
+```
+
+이 값은 **비밀번호와 동일하게 취급**하세요. 저장소, 이슈, 로그, 채팅 등에 공개하면 안 됩니다.
+
+## 6. 종료
+
+```powershell
+.\Stop-PublicMcp.ps1
+```
+
+이 명령은 Project Moon용 Funnel 리스너와 Docker 컨테이너를 중지합니다.
+
+---
+
+# GPU 사용
+
+NVIDIA GPU를 컨테이너에서 사용하려면:
+
+```powershell
+.\Start-PublicMcp.ps1 -Gpu
+```
+
+Project Moon은 실행 전에 다음을 확인합니다.
+
+- 호스트 `nvidia-smi`
+- Docker NVIDIA 런타임
+- 컨테이너 GPU Device Request
+- 컨테이너 내부 `nvidia-smi`
+
+실행 후 별도로 점검하려면:
+
+```powershell
+.\Test-Gpu.ps1
+```
+
+정상이면 `status: PASS`와 GPU/드라이버/CUDA 정보가 출력됩니다.
+
+---
+
+# MCP 도구
+
+## 1. 명령 및 프로세스 관리 — 6개
+
+| 도구 | 기능 |
+|---|---|
+| `exec_command` | 셸 명령, Git, 빌드, 테스트, 패키지 관리자, 시스템 명령 실행 |
+| `run_script` | Bash, sh, Node.js, Python 등 전체 스크립트 실행 |
+| `write_stdin` | 실행 중인 프로세스에 입력 전달 |
+| `read_process` | 장기 실행 프로세스의 새 출력 및 상태 조회 |
+| `terminate_process` | 프로세스 그룹에 `SIGINT`, `SIGTERM`, `SIGKILL` 전달 |
+| `list_processes` | 실행 중이거나 최근 완료된 Moon 프로세스 목록 조회 |
+
+명령이 즉시 끝나지 않으면 `sessionId`가 반환될 수 있습니다.
+
+```text
+exec_command
+     │
+     ├─ 즉시 완료 → 결과 반환
+     │
+     └─ 계속 실행 → sessionId
+                       │
+                       ├─ read_process
+                       ├─ write_stdin
+                       └─ terminate_process
+```
+
+프로세스 상태는 Project Moon 서비스 메모리에 유지되므로 MCP HTTP 요청이 달라져도 이어서 조회할 수 있습니다. 단, Project Moon 서비스가 재시작되면 해당 상태는 사라집니다.
+
+## 2. 파일시스템 — 14개
+
+### 조회
+
+- `list_directory`
+- `stat_path`
+- `read_file`
+- `hash_file`
+
+### 수정
+
+- `write_file`
+- `replace_in_file`
+- `apply_patch`
+- `chmod_path`
+
+### 전송
+
+- `upload_file`
+- `download_file`
+
+### 구조 변경
+
+- `make_directory`
+- `copy_path`
+- `move_path`
+- `remove_path`
+
+상대 경로는 `MCP_DEFAULT_CWD`를 기준으로 해석합니다.
+
+> [!WARNING]
+> `remove_path`는 휴지통을 거치지 않고 실제 파일을 삭제합니다. `apply_patch`는 호스트의 `git apply --unsafe-paths`를 사용합니다.
+
+텍스트 파일은 UTF-8 경계를 보존하며, 바이너리 데이터는 Base64 방식으로 전송할 수 있습니다.
+
+---
+
+# 코드 리뷰 하니스 — 6개
+
+Project Moon에는 특정 AI 모델에 종속되지 않는 코드 리뷰 하니스가 포함되어 있습니다.
+
+AI가 판단과 분석을 담당하고, Moon은 다음과 같은 **검증 가능한 상태와 증거**를 관리합니다.
+
+- 리뷰 시작 시점의 Git SHA
+- base / head / merge-base
+- 변경 파일과 diff 통계
+- 설계 의도
+- 리뷰 기준
+- 리뷰 결과
+- 수정 판단
+- Worktree
+- QA 명령과 stdout/stderr
+- 최종 통과 여부
+
+## 리뷰 상태 흐름
+
+```text
+Git working tree clean
+        │
+        ▼
+CONTEXT_READY
+        │ 설계 의도
+        ▼
+INTENT_READY
+        │ 리뷰 기준
+        ▼
+CRITERIA_READY
+        │ PR 설명
+        ▼
+REVIEW_READY
+        │ 리뷰
+        ▼
+REVIEWED
+        │ 수정 판단
+        ▼
+FIXING
+        │ QA
+        ├──────────────▶ QA_FAILED
+        ▼
+QA
+        │ 최종 보고서
+        ▼
+PASSED
+```
+
+리뷰가 끝난 뒤 대상 브랜치의 SHA가 바뀌면 기존 검증은 자동으로:
+
+```text
+STALE
+```
+
+상태로 판단됩니다.
+
+## 리뷰 도구
+
+| 도구 | 기능 |
+|---|---|
+| `review_start` | clean tree 확인 후 base/head/merge-base SHA 고정 |
+| `review_context` | intent / criteria / review / fix 단계별 제한된 컨텍스트 제공 |
+| `review_record` | 설계 의도, 기준, PR 설명, 리뷰, 판단, 최종 보고서 저장 |
+| `review_worktree` | 리뷰 대상 SHA 기반 격리 Worktree 생성·조회·삭제 |
+| `review_qa` | QA 명령 순차 실행 및 증거 저장 |
+| `review_status` | SHA, STALE, Worktree, P1, QA, `readyToPush` 상태 조회 |
+
+일반적인 흐름은 다음과 같습니다.
+
+```text
+review_start
+→ review_context(intent)
+→ review_record(design_intent)
+→ review_context(criteria)
+→ review_record(criteria)
+→ review_record(pr_body)
+→ review_context(review)
+→ review_record(review)
+→ review_record(decisions)
+→ review_worktree          # 필요할 경우
+→ review_context(fix)      # 수정할 경우
+→ review_qa
+→ review_record(final_report)
+→ review_status
+```
+
+중요한 규칙:
+
+- `review_start`는 dirty working tree를 거부합니다.
+- 리뷰 기준이 바뀌면 그 기준에 의존하던 기존 리뷰·QA 증거가 무효화됩니다.
+- `final_report` 생성에는 최신 QA 성공과 `unresolvedP1 == 0`이 필요합니다.
+- 리뷰 대상 브랜치가 움직이면 `effectiveState="STALE"`이 됩니다.
+- `readyToPush`는 현재 **검토 상태를 나타내는 권고 게이트**이며 `exec_command`로 직접 수행하는 `git push` 자체를 차단하지는 않습니다.
+
+프로젝트별 리뷰 규칙은 다음 파일에서 관리할 수 있습니다.
+
+- [`docs/code-convention.yaml`](docs/code-convention.yaml)
+- [`docs/adr.yaml`](docs/adr.yaml)
+- [`harnesses/code-review/README.md`](harnesses/code-review/README.md)
+
+---
+
+# MCP 전송 구조
+
+Project Moon의 `/mcp`는 **stateless Streamable HTTP JSON** 방식입니다.
+
+```text
+HTTP 요청
+   │
+   ▼
+인증 / Host 검증
+   │
+   ▼
+요청별 MCP transport 생성
+   │
+   ▼
+Moon 도구 실행
+   │
+   ▼
+JSON 응답 + X-Request-Id
+```
+
+주요 특징:
+
+- 각각의 `POST /mcp` 요청은 독립적입니다.
+- `Mcp-Session-Id`를 필수로 사용하지 않습니다.
+- 이전 클라이언트가 보내는 오래된 `Mcp-Session-Id`는 무시합니다.
+- 인증된 `GET /mcp`, `DELETE /mcp`는 일반적으로 `405`를 반환합니다.
+- MCP transport와 Moon 명령의 `sessionId`는 서로 다른 개념입니다.
+
+---
+
+# 인증과 보안
+
+Project Moon은 두 가지 내장 인증 방식을 지원합니다.
+
+1. Static Bearer Token
+2. OAuth 2.1 + DCR + PKCE
+
+Windows + Tailscale Funnel 구성에서는 **OAuth 2.1 사용을 권장**합니다.
+
+## OAuth 2.1
+
+Project Moon의 내장 OAuth 서버는 다음 기능을 제공합니다.
+
+- RFC 9728 Protected Resource Metadata
+- RFC 8414 Authorization Server Metadata
+- Dynamic Client Registration(DCR)
+- Authorization Code
+- PKCE `S256`
+- Resource Audience 검증
+- Access Token
+- Refresh Token Rotation
+- Refresh Token Replay 탐지
+- Token Revocation
+
+사용 범위(scope)는 현재 다음 하나입니다.
+
+```text
+mcp:tools
+```
+
+주요 엔드포인트:
+
+| 경로 | 기능 |
+|---|---|
+| `/.well-known/oauth-protected-resource` | OAuth 보호 리소스 메타데이터 |
+| `/.well-known/oauth-protected-resource/mcp` | `/mcp`용 보호 리소스 메타데이터 |
+| `/.well-known/oauth-authorization-server` | Authorization Server 메타데이터 |
+| `/register` | Dynamic Client Registration |
+| `/authorize` | 연결 승인 및 Authorization Code 발급 |
+| `/token` | Access/Refresh Token 교환 |
+| `/revoke` | 토큰 폐기 |
+
+OAuth 클라이언트와 토큰 해시는 `MCP_OAUTH_STATE_FILE`에 저장되며 파일 권한은 `600`으로 관리됩니다.
+
+## Static Bearer Token
+
+`MCP_AUTH_TOKEN`을 설정하면 다음 헤더로 인증합니다.
+
+```http
+Authorization: Bearer <MCP_AUTH_TOKEN>
+```
+
+강한 랜덤값 생성 예시:
+
+```bash
+openssl rand -hex 32
+```
+
+OAuth 전용으로 운영하려면 `MCP_AUTH_TOKEN`을 비워 두는 것이 좋습니다.
+
+## 인증을 외부에 위임하는 경우
+
+신뢰할 수 있는 상위 OAuth Gateway 또는 사설 네트워크에서 인증을 완전히 담당할 때만 다음 설정을 사용할 수 있습니다.
+
+```dotenv
+MCP_AUTH_TOKEN=
+MCP_OAUTH_ENABLED=false
+MCP_ALLOW_NO_AUTH=true
+```
+
+> [!DANGER]
+> `MCP_ALLOW_NO_AUTH=true` 상태로 Project Moon을 인터넷에 직접 노출하면 안 됩니다. Moon은 명령 실행·파일 수정·삭제 권한을 제공하므로 사실상 컴퓨터 제어 권한을 공개하는 것과 같습니다.
+
+---
+
+# ChatGPT 연결
+
+Project Moon 실행 후 `Start-PublicMcp.ps1`이 출력한 주소를 사용합니다.
+
+```text
+https://project-moon.<tailnet>.ts.net/mcp
+```
+
+ChatGPT에서 MCP 연결을 만들 때 Project Moon의 OAuth 흐름을 사용하면:
+
+```text
+ChatGPT
+  ↓
+Project Moon OAuth Metadata
+  ↓
+Dynamic Client Registration
+  ↓
+Authorization + PKCE
+  ↓
+Moon 승인 페이지
+  ↓
+MCP_OAUTH_APPROVAL_KEY 입력
+  ↓
+Access Token 발급
+  ↓
+MCP 연결
+```
+
+승인 키는 다음 명령으로 확인할 수 있습니다.
+
+```powershell
+.\Get-OAuthApprovalKey.ps1
+```
+
+Project Moon은 파일 쓰기, 삭제, 명령 실행 기능을 제공하므로 클라이언트 측 정책에서도 해당 MCP 기능 사용이 허용되어 있어야 합니다.
+
+관련 OpenAI 문서:
+
+- [ChatGPT Plugins Quickstart](https://developers.openai.com/plugins/quickstart)
+- [Developer mode and full MCP connectors in ChatGPT](https://help.openai.com/en/articles/12584461-developer-mode-and-full-mcp-connectors-in-chatgpt-beta)
+- [MCP server authentication](https://developers.openai.com/plugins/build/auth)
+- [MCP and Connectors in the Responses API](https://developers.openai.com/api/docs/guides/tools-connectors-mcp)
+
+---
+
+# 로컬 Node.js 개발
+
+Docker 없이 Node.js 서버 자체를 개발할 수도 있습니다.
+
+## 요구 사항
+
+- Node.js 22 이상
+- npm
+- Git
 
 ```bash
 git clone https://github.com/kankinku/project-moon.git
@@ -71,256 +561,18 @@ npm install
 npm run build
 
 export MCP_AUTH_TOKEN="$(openssl rand -hex 32)"
-export MCP_DEFAULT_CWD=/root
+export MCP_DEFAULT_CWD=/tmp
 npm start
 ```
 
-The default endpoints are:
-
-- MCP: `http://127.0.0.1:3000/mcp`
-- health: `http://127.0.0.1:3000/health`
-
-For a public deployment, normally place Project Moon behind HTTPS and configure either built-in OAuth 2.1 or a strong static Bearer token. Production examples are included under [`deploy/`](deploy/).
-
-## Core capabilities
-
-### 1. Execution and process control
-
-| Tool | Purpose |
-|---|---|
-| `exec_command` | Run shell commands, builds, tests, package managers, Git, service commands, and log inspection |
-| `run_script` | Run a complete Bash, sh, Node.js, Python, or custom-interpreter script |
-| `write_stdin` | Send input to a managed long-running process and retrieve new output |
-| `read_process` | Poll retained process output with a cursor and inspect completion state |
-| `terminate_process` | Send `SIGINT`, `SIGTERM`, or `SIGKILL` to a managed process group |
-| `list_processes` | List running and recently completed process sessions |
-
-A command may finish inside the initial tool call or return a process `sessionId`. Later MCP requests can use that ID with `read_process`, `write_stdin`, or `terminate_process`. Managed process state is kept in service memory and is lost when the Project Moon service restarts.
-
-### 2. Filesystem operations
-
-Project Moon can operate on relative paths, absolute paths, and `~/...` paths. Relative paths resolve from `MCP_DEFAULT_CWD`.
-
-Available tools:
-
-- inspection: `list_directory`, `stat_path`, `read_file`, `hash_file`;
-- editing: `write_file`, `replace_in_file`, `apply_patch`, `chmod_path`;
-- transfer: `upload_file`, `download_file`;
-- structure: `make_directory`, `copy_path`, `move_path`, `remove_path`.
-
-`remove_path` permanently deletes targets; there is no trash layer. `apply_patch` uses the host's `git apply --unsafe-paths`.
-
-#### File reading and transfer rules
-
-- `offset`, `bytesRead`, and `nextOffset` are byte offsets/counts.
-- UTF-8 reads never split a multibyte character. `bytesRead` may exceed the requested `maxBytes` by up to 3 bytes when required to return one complete character, while still staying under `MCP_MAX_FILE_CHUNK_BYTES`.
-- Invalid UTF-8 is rejected. Use `encoding="base64"` for binary content.
-- Base64 writes/uploads are strictly validated before modifying a file.
-- `write_file.fileMode` applies to new files and to overwrite/append operations.
-- `copy_path` reports a conflict when the destination exists and `force=false`.
-
-### 3. Provider-independent code-review harness
-
-The review harness adapts the core workflow ideas of the MAFIA Code-Review Harness into Project Moon-native MCP tools. It does **not** require Claude Code or another specific model/provider at runtime.
-
-The central principle is simple: **reasoning can change, but the evidence being reviewed should not silently change underneath it.** A review run therefore pins the base, head, and merge-base commits and persists its state under `.moon/reviews/`.
+기본 주소:
 
 ```text
-clean Git tree
-    │
-    ▼
-CONTEXT_READY
-    │ design intent
-    ▼
-INTENT_READY
-    │ criteria
-    ▼
-CRITERIA_READY
-    │ PR body
-    ▼
-REVIEW_READY
-    │ findings
-    ▼
-REVIEWED
-    │ decisions / accepted fixes
-    ▼
-FIXING
-    │ QA
-    ├──────────────▶ QA_FAILED
-    ▼
-QA
-    │ final report
-    ▼
-PASSED
-
-If the reviewed branch advances after the run was pinned:
-PASSED/any state ──▶ effective state: STALE
+MCP    http://127.0.0.1:3000/mcp
+Health http://127.0.0.1:3000/health
 ```
 
-#### Review tools
-
-| Tool | Purpose |
-|---|---|
-| `review_start` | Require a clean tree, resolve base/head/merge-base SHAs, snapshot changed files/diff stats, create the review manifest |
-| `review_context` | Return bounded stage-specific context for `intent`, `criteria`, `review`, or `fix` reasoning |
-| `review_record` | Persist design intent, criteria, PR body, findings, decisions, and final report while enforcing dependencies |
-| `review_worktree` | Create, inspect, or remove an isolated detached/writable Git worktree pinned to the reviewed commit |
-| `review_qa` | Run sequential QA commands and persist stdout/stderr, exit status, duration, and pass/fail evidence |
-| `review_status` | Report pinned/current SHA state, staleness, worktree state, unresolved P1 status, QA state, and `readyToPush` |
-
-#### Typical review lifecycle
-
-A client can drive the workflow in this order:
-
-```text
-1. review_start
-2. review_context(stage="intent")
-3. review_record(kind="design_intent")
-4. review_context(stage="criteria")
-5. review_record(kind="criteria")
-6. review_record(kind="pr_body")
-7. review_context(stage="review")
-8. review_record(kind="review", p1Findings=...)
-9. review_record(kind="decisions", unresolvedP1=...)
-10. review_worktree(action="create", writable=true)   # optional fix isolation
-11. review_context(stage="fix")                       # when fixes are needed
-12. review_qa
-13. review_record(kind="final_report")
-14. review_status
-```
-
-Important invariants:
-
-- `review_start` refuses a dirty working tree so the pinned commit fully represents the code under review.
-- Changing an upstream review artifact invalidates dependent downstream artifacts and QA evidence. For example, revising criteria invalidates the PR body, findings, decisions, final report, and previous QA result.
-- A final report requires a passing QA run and `unresolvedP1 == 0`.
-- If the reviewed branch moves away from its pinned `headSha`, `review_status` reports `stale=true` and `effectiveState="STALE"`.
-- A writable review worktree that diverges from the pinned commit is considered pending fix work, not proof that the new code has been reviewed.
-- `readyToPush` is currently an **advisory review gate**. It does not intercept or prohibit an independent raw `git push` executed through `exec_command`.
-
-Project-specific review conventions and architecture decisions can be stored in [`docs/code-convention.yaml`](docs/code-convention.yaml) and [`docs/adr.yaml`](docs/adr.yaml). The harness only includes those policy documents in the stage where they are relevant.
-
-See [`harnesses/code-review/README.md`](harnesses/code-review/README.md) for the prompt contracts used by the workflow.
-
-## How MCP requests are handled
-
-`/mcp` is a stateless Streamable HTTP JSON endpoint. Every HTTP request is handled independently.
-
-```text
-client request
-    │
-    ▼
-authentication / host validation
-    │
-    ▼
-new stateless MCP transport
-    │
-    ▼
-tool execution on host
-    │
-    ▼
-JSON result + X-Request-Id
-```
-
-Key transport semantics:
-
-- Each `POST /mcp` request gets a new MCP transport. Project Moon does not issue or require an `Mcp-Session-Id`.
-- A stale `Mcp-Session-Id` header from an older client is ignored.
-- Authenticated `GET /mcp` and `DELETE /mcp` requests normally return `405 Method Not Allowed`; no separate server-push SSE session is maintained.
-- MCP transport state and command process `sessionId` values are unrelated.
-- Process sessions survive across MCP HTTP requests only because Project Moon retains them in its own service memory.
-
-## Authentication and security model
-
-Project Moon supports two built-in authentication paths:
-
-1. a static Bearer token;
-2. a built-in OAuth 2.1 Authorization Server with DCR and PKCE.
-
-### Static Bearer token
-
-When `MCP_AUTH_TOKEN` is set, MCP calls require:
-
-```http
-Authorization: Bearer <MCP_AUTH_TOKEN>
-```
-
-Generate a high-entropy value, for example:
-
-```bash
-openssl rand -hex 32
-```
-
-### Built-in OAuth 2.1
-
-Example environment values:
-
-```dotenv
-MCP_OAUTH_ENABLED=true
-MCP_OAUTH_APPROVAL_KEY=<separate-value-generated-with-openssl-rand-hex-32>
-MCP_PUBLIC_URL=https://mcp.example.com
-MCP_OAUTH_ISSUER=https://mcp.example.com
-MCP_OAUTH_RESOURCE=https://mcp.example.com/mcp
-MCP_OAUTH_STATE_FILE=/var/lib/project-moon/oauth-state.json
-```
-
-The built-in authorization server provides:
-
-- RFC 9728 Protected Resource Metadata;
-- RFC 8414 Authorization Server Metadata;
-- Dynamic Client Registration (DCR);
-- Authorization Code + PKCE (`S256`);
-- resource audience validation;
-- access tokens;
-- replay-detecting refresh-token rotation;
-- grant-level token revocation.
-
-OAuth uses a single `mcp:tools` scope. The approval page requires `MCP_OAUTH_APPROVAL_KEY`. For an OAuth-only deployment, leave `MCP_AUTH_TOKEN` empty so there is no permanent static-Bearer bypass. When no dedicated approval key is configured, `MCP_AUTH_TOKEN` is used for backward compatibility, but separating the credentials is safer.
-
-Registered clients, client secrets, and token hashes are stored in `MCP_OAUTH_STATE_FILE` with file mode `600`.
-
-OAuth routes:
-
-| Path | Purpose |
-|---|---|
-| `/.well-known/oauth-protected-resource` | RFC 9728 resource metadata |
-| `/.well-known/oauth-protected-resource/mcp` | Resource metadata for `/mcp` |
-| `/.well-known/oauth-authorization-server` | RFC 8414 authorization-server metadata |
-| `/register` | Dynamic Client Registration |
-| `/authorize` | User approval and authorization-code issuance |
-| `/token` | Authorization-code / refresh-token exchange |
-| `/revoke` | Token revocation |
-
-### External authentication
-
-If authentication is enforced by an upstream OAuth gateway, private network, or another trusted proxy, built-in checks can be disabled:
-
-```dotenv
-MCP_AUTH_TOKEN=
-MCP_OAUTH_ENABLED=false
-MCP_ALLOW_NO_AUTH=true
-```
-
-`MCP_ALLOW_NO_AUTH=true` does not make the service anonymous while a static token remains configured or built-in OAuth remains enabled.
-
-When delegating authentication upstream, bind Project Moon to `127.0.0.1` and prevent direct public access to the Node.js port. An unauthenticated public Project Moon endpoint exposes the host's execution privileges to anyone who can reach it.
-
-### MCP safety metadata
-
-Every tool publishes all four MCP tool-safety hints. These values are advisory metadata for clients, not an authorization boundary.
-
-| Behavior | Tools | `readOnlyHint` | `destructiveHint` | `idempotentHint` | `openWorldHint` |
-|---|---|---:|---:|---:|---:|
-| Read-only, closed world | `list_directory`, `stat_path`, `read_file`, `download_file`, `hash_file`, `read_process`, `list_processes`, `review_context`, `review_status` | `true` | `false` | `true` | `false` |
-| Additive and idempotent | `make_directory` | `false` | `false` | `true` | `false` |
-| Additive and non-idempotent | `review_start` | `false` | `false` | `false` | `false` |
-| Destructive and idempotent | `upload_file`, `copy_path`, `move_path`, `remove_path`, `chmod_path` | `false` | `true` | `true` | `false` |
-| Destructive and non-idempotent, closed world | `write_file`, `replace_in_file`, `apply_patch`, `terminate_process`, `review_record`, `review_worktree` | `false` | `true` | `false` | `false` |
-| Destructive and non-idempotent, open world | `exec_command`, `run_script`, `write_stdin`, `review_qa` | `false` | `true` | `false` | `true` |
-
-When built-in OAuth is enabled, tools also advertise the `oauth2` security scheme with the `mcp:tools` scope through `_meta.securitySchemes`. Static Bearer and `MCP_ALLOW_NO_AUTH` deployments intentionally do not claim to be OAuth or `noauth` at the per-tool metadata layer because the actual deployment boundary may be handled elsewhere.
-
-## Local development
+개발 모드:
 
 ```bash
 export MCP_HOST=127.0.0.1
@@ -328,17 +580,17 @@ export MCP_AUTH_TOKEN="$(openssl rand -hex 32)"
 npm run dev
 ```
 
-Useful project commands:
+---
 
-```bash
-npm run typecheck
-npm test
-npm run build
-```
+# Linux VPS / EC2 배포
 
-## VPS / EC2 deployment
+`deploy/`에는 다음 예제가 포함되어 있습니다.
 
-The repository includes systemd, environment-file, and Nginx examples under [`deploy/`](deploy/). The following example installs Project Moon at `/opt/project-moon` on an Ubuntu-based host:
+- systemd 서비스
+- 환경변수 예제
+- Nginx 설정
+
+Ubuntu 계열 서버 예시:
 
 ```bash
 sudo mkdir -p /opt/project-moon
@@ -349,7 +601,6 @@ sudo npm run build
 sudo npm prune --omit=dev
 
 sudo install -d -m 0700 /var/lib/project-moon
-
 sudo cp deploy/project-moon.env.example /etc/project-moon.env
 sudo chmod 600 /etc/project-moon.env
 sudo editor /etc/project-moon.env
@@ -357,23 +608,18 @@ sudo editor /etc/project-moon.env
 sudo cp deploy/project-moon.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now project-moon
-sudo systemctl status project-moon
 ```
 
-If `/usr/bin/node` is not the real Node.js path, update `ExecStart` in the unit file (`which node` can locate it).
+공개 배포 시 권장 사항:
 
-For a public deployment:
+- Project Moon 자체는 `127.0.0.1`에 바인딩
+- TLS는 Nginx 등 신뢰할 수 있는 Reverse Proxy에서 종료
+- 외부에는 HTTPS 포트만 공개
+- OAuth 상태 파일을 애플리케이션 checkout 밖에 저장
+- Secret은 Git에 저장하지 않음
+- 실제 Proxy hop 수와 일치할 때만 `MCP_TRUST_PROXY_HOPS` 설정
 
-- terminate TLS at Nginx or another trusted reverse proxy;
-- bind Project Moon itself to `127.0.0.1`;
-- expose only the HTTPS proxy ports externally;
-- use a proxy read timeout long enough for long-running tool calls;
-- persist OAuth state outside the application checkout;
-- keep secrets outside Git.
-
-Set `MCP_TRUST_PROXY_HOPS=1` only when exactly one trusted reverse proxy is in front of Project Moon. Incorrectly trusting forwarded IP headers can undermine IP-based OAuth rate limiting.
-
-A minimal OAuth-oriented production configuration looks like:
+OAuth 기반 예시:
 
 ```dotenv
 MCP_HOST=127.0.0.1
@@ -382,53 +628,37 @@ MCP_ALLOWED_HOSTS=mcp.example.com,127.0.0.1,localhost
 MCP_TRUST_PROXY_HOPS=1
 MCP_AUTH_TOKEN=
 MCP_OAUTH_ENABLED=true
-MCP_OAUTH_APPROVAL_KEY=<value-generated-with-openssl-rand-hex-32>
+MCP_OAUTH_APPROVAL_KEY=<strong-random-value>
 MCP_OAUTH_ISSUER=https://mcp.example.com
 MCP_OAUTH_RESOURCE=https://mcp.example.com/mcp
 MCP_OAUTH_STATE_FILE=/var/lib/project-moon/oauth-state.json
 ```
 
-## Connecting ChatGPT
+---
 
-Assume the deployed MCP URL is:
+# 상태 확인과 문제 해결
 
-```text
-https://mcp.example.com/mcp
-```
+## Health 확인
 
-The exact ChatGPT UI can vary by account/workspace configuration, but the connection needs the same underlying information: the MCP URL and an authentication method. When using Project Moon's built-in OAuth server, use its Dynamic Client Registration flow and the `mcp:tools` scope. When the Project Moon approval page appears, authorize the connection with `MCP_OAUTH_APPROVAL_KEY`.
-
-Project Moon provides DCR and OAuth Authorization Code + PKCE (`S256`); it does not implement CIMD or OIDC.
-
-Because Project Moon exposes write, delete, and command-execution tools, the connected ChatGPT workspace or client must permit the corresponding MCP capabilities. Client/workspace policy can restrict capabilities even when the server exposes them.
-
-Relevant OpenAI documentation:
-
-- [ChatGPT Plugins Quickstart](https://developers.openai.com/plugins/quickstart)
-- [Developer mode and full MCP connectors in ChatGPT](https://help.openai.com/en/articles/12584461-developer-mode-and-full-mcp-connectors-in-chatgpt-beta)
-- [MCP server authentication](https://developers.openai.com/plugins/build/auth)
-- [MCP and Connectors in the Responses API](https://developers.openai.com/api/docs/guides/tools-connectors-mcp)
-
-## Operations and troubleshooting
-
-### Health and logs
+로컬 Node 서버:
 
 ```bash
-# Local service behind the reverse proxy
 curl http://127.0.0.1:3000/health
-
-# Public endpoint
-curl https://mcp.example.com/health
-
-# systemd status / logs
-sudo systemctl status project-moon
-sudo journalctl -u project-moon -f
-
-# Restart after configuration or code changes
-sudo systemctl restart project-moon
 ```
 
-Example health response:
+Windows Docker/Tailscale 구성의 로컬 Proxy:
+
+```powershell
+curl.exe http://127.0.0.1:2999/health
+```
+
+공개 주소:
+
+```text
+https://project-moon.<tailnet>.ts.net/health
+```
+
+정상 응답 예시:
 
 ```json
 {
@@ -444,37 +674,28 @@ Example health response:
 }
 ```
 
-Notes:
+## 자주 발생하는 문제
 
-- `activeMcpSessions` is always `0` in stateless mode.
-- `activeMcpRequests` is the number of MCP HTTP requests currently being processed.
-- `managedProcesses` includes running and recently completed process records. Inspect each record's `running` field for actual execution state.
-- Completed process records are removed after `MCP_PROCESS_RETENTION_MS`.
-- Every MCP response includes `X-Request-Id` for tracing.
-- Structured `event="mcp_request"` logs include RPC method, tool name, HTTP status, outcome, and duration without logging authentication tokens or tool arguments.
-
-Filter recent MCP request logs:
-
-```bash
-sudo journalctl -u project-moon -o cat | grep '"event":"mcp_request"'
-```
-
-### Common failures
-
-| Symptom | Check |
+| 증상 | 확인할 항목 |
 |---|---|
-| OAuth configuration cannot be fetched | `MCP_OAUTH_ENABLED`, public URL, `/.well-known/` proxy routing |
-| `401 Unauthorized` | static Bearer token or OAuth access token |
+| Tailscale 명령을 찾지 못함 | Tailscale 설치 및 `tailscale.exe` PATH |
+| `Start-PublicMcp.ps1` 권한 오류 | 관리자 PowerShell인지 확인 |
+| Docker 연결 실패 | Docker Desktop Engine 실행 여부 |
+| Funnel URL을 얻지 못함 | Tailscale 로그인 및 Funnel 승인 여부 |
+| OAuth 메타데이터 로드 실패 | `MCP_PUBLIC_URL`, `/.well-known/*` 라우팅 |
+| `401 Unauthorized` | OAuth 토큰 또는 Bearer Token |
 | `403 Host header is not allowed` | `MCP_ALLOWED_HOSTS` |
-| command returned `sessionId` | poll with `read_process` or interact with `write_stdin` |
-| authenticated `GET /mcp` returns `405` | expected for the stateless POST-only MCP transport |
-| managed process disappeared after restart | process state is intentionally in-memory |
-| review reports `STALE` | the reviewed head branch moved after `review_start`; start a new review run |
-| `final_report` is rejected | resolve all P1 findings and produce fresh passing QA evidence |
+| 명령이 `sessionId` 반환 | `read_process`로 후속 조회 |
+| `GET /mcp`가 `405` | stateless POST 전송에서는 정상 |
+| 재시작 후 프로세스 세션 소실 | 프로세스 상태는 메모리에 저장됨 |
+| 리뷰가 `STALE` | 리뷰 시작 이후 대상 브랜치 SHA 변경 |
+| `final_report` 거부 | P1 해결 및 최신 QA 통과 여부 |
 
-## Verification
+---
 
-The normal repository verification sequence is:
+# 테스트와 검증
+
+저장소 기본 검증:
 
 ```bash
 npm run typecheck
@@ -482,22 +703,21 @@ npm test
 npm run build
 ```
 
-The test suite uses a real Streamable HTTP MCP client and covers authentication, stateless request handling, process lifecycle, file operations, UTF-8/base64 boundaries, patch application, OAuth, all 26 tool contracts, and the review-harness lifecycle.
+현재 통합 테스트는 다음 영역을 검증합니다.
 
-The review E2E path specifically verifies:
+- 인증
+- OAuth 2.1
+- Stateless MCP 요청
+- 프로세스 lifecycle
+- 파일 읽기·쓰기·패치
+- UTF-8 / Base64 경계
+- 모든 26개 도구 계약
+- 코드 리뷰 하니스 lifecycle
+- Worktree
+- QA invalidation
+- STALE 감지
 
-- dirty-tree rejection at review start;
-- pinned base/head/merge-base context;
-- artifact dependency invalidation;
-- isolated Git worktree creation/removal;
-- unresolved-P1 blocking;
-- QA invalidation and required rerun after decisions change;
-- successful final gate;
-- stale detection after the reviewed branch advances.
-
-### External E2E verification
-
-From a separate source checkout with development dependencies installed, all 26 tools can be exercised against a running HTTPS endpoint:
+실제 실행 중인 외부 MCP 서버를 대상으로 E2E 테스트할 수도 있습니다.
 
 ```bash
 MCP_E2E_URL='https://mcp.example.com/mcp' \
@@ -506,73 +726,120 @@ MCP_E2E_ROOT='/tmp/project-moon-tools-e2e-manual' \
 npx vitest run test/all-tools.integration.test.ts
 ```
 
-This test executes real commands and creates/modifies/deletes files on the target host. `MCP_E2E_ROOT` must match `/tmp/project-moon-tools-e2e-*`; do not point it at production data. Run external E2E tests from a separate checkout rather than changing the production installation's dependency layout.
+> E2E 테스트는 대상 호스트에서 실제 명령을 실행하고 파일을 생성·수정·삭제합니다. 운영 데이터 디렉터리를 `MCP_E2E_ROOT`로 사용하지 마세요.
 
-## Configuration reference
+---
 
-| Variable | Default | Description |
+# 주요 환경변수
+
+| 변수 | 기본값 | 설명 |
 |---|---:|---|
-| `MCP_HOST` | `0.0.0.0` | HTTP bind address |
-| `MCP_PORT` | `3000` | HTTP port |
-| `MCP_ENDPOINT` | `/mcp` | Streamable HTTP MCP path |
-| `MCP_PUBLIC_URL` | none | External HTTPS base URL excluding `/mcp` |
-| `MCP_ALLOWED_HOSTS` | none | Comma-separated allowed Host-header hostnames |
-| `MCP_TRUST_PROXY_HOPS` | `0` | Number of trusted reverse-proxy hops |
-| `MCP_AUTH_TOKEN` | none | Optional static Bearer token |
-| `MCP_ALLOW_NO_AUTH` | `false` | Allow startup with no built-in authentication |
-| `MCP_OAUTH_ENABLED` | `false` | Enable built-in OAuth 2.1/DCR |
-| `MCP_OAUTH_APPROVAL_KEY` | `MCP_AUTH_TOKEN` | Key used on the OAuth connection approval page |
-| `MCP_OAUTH_ISSUER` | `MCP_PUBLIC_URL` | OAuth issuer URL |
-| `MCP_OAUTH_RESOURCE` | `<MCP_PUBLIC_URL><MCP_ENDPOINT>` | MCP resource audience |
-| `MCP_OAUTH_STATE_FILE` | inside working directory | Persistent registered-client/token-hash state |
-| `MCP_OAUTH_ACCESS_TOKEN_TTL_SECONDS` | `3600` | Access-token lifetime |
-| `MCP_OAUTH_REFRESH_TOKEN_TTL_SECONDS` | `2592000` | Refresh-token lifetime |
-| `MCP_OAUTH_AUTHORIZATION_CODE_TTL_SECONDS` | `300` | One-time authorization-code lifetime |
-| `MCP_DEFAULT_CWD` | server startup directory | Base directory for relative filesystem/command paths |
-| `MCP_DEFAULT_SHELL` | `$SHELL` or `/bin/bash` | Default shell for `exec_command` |
-| `MCP_MAX_REQUEST_BODY` | `8mb` | HTTP request-body limit |
-| `MCP_MAX_OUTPUT_BYTES` | `1048576` | Maximum output returned in one tool response |
-| `MCP_MAX_RETAINED_PROCESS_OUTPUT_BYTES` | `4194304` | Retained output per managed process |
-| `MCP_PROCESS_RETENTION_MS` | `3600000` | Completed-process retention period |
-| `MCP_MAX_PROCESSES` | `128` | Maximum retained process records |
-| `MCP_MAX_FILE_CHUNK_BYTES` | `1048576` | Maximum file read/transfer chunk |
-| `MCP_MAX_EDIT_FILE_BYTES` | `67108864` | Maximum file size for text replacement |
+| `MCP_HOST` | `0.0.0.0` | HTTP 바인드 주소 |
+| `MCP_PORT` | `3000` | MCP 서버 포트 |
+| `MCP_ENDPOINT` | `/mcp` | MCP 엔드포인트 |
+| `MCP_PUBLIC_URL` | 없음 | 외부 HTTPS 기본 URL |
+| `MCP_ALLOWED_HOSTS` | 없음 | 허용할 Host 헤더 목록 |
+| `MCP_TRUST_PROXY_HOPS` | `0` | 신뢰하는 Reverse Proxy hop 수 |
+| `MCP_AUTH_TOKEN` | 없음 | Static Bearer Token |
+| `MCP_ALLOW_NO_AUTH` | `false` | 내장 인증 없이 시작 허용 |
+| `MCP_OAUTH_ENABLED` | `false` | 내장 OAuth 2.1 활성화 |
+| `MCP_OAUTH_APPROVAL_KEY` | `MCP_AUTH_TOKEN` | OAuth 승인 페이지 키 |
+| `MCP_OAUTH_ISSUER` | `MCP_PUBLIC_URL` | OAuth Issuer |
+| `MCP_OAUTH_RESOURCE` | Public URL + endpoint | OAuth Resource Audience |
+| `MCP_OAUTH_STATE_FILE` | 작업 디렉터리 내부 | OAuth 영구 상태 파일 |
+| `MCP_OAUTH_ACCESS_TOKEN_TTL_SECONDS` | `3600` | Access Token 수명 |
+| `MCP_OAUTH_REFRESH_TOKEN_TTL_SECONDS` | `2592000` | Refresh Token 수명 |
+| `MCP_OAUTH_AUTHORIZATION_CODE_TTL_SECONDS` | `300` | Authorization Code 수명 |
+| `MCP_DEFAULT_CWD` | 서버 시작 위치 | 상대경로 기준 디렉터리 |
+| `MCP_DEFAULT_SHELL` | `$SHELL` 또는 `/bin/bash` | 기본 셸 |
+| `MCP_MAX_REQUEST_BODY` | `8mb` | HTTP 요청 크기 제한 |
+| `MCP_MAX_OUTPUT_BYTES` | `1048576` | 한 응답의 최대 출력 크기 |
+| `MCP_MAX_RETAINED_PROCESS_OUTPUT_BYTES` | `4194304` | 프로세스별 보관 출력 크기 |
+| `MCP_PROCESS_RETENTION_MS` | `3600000` | 완료 프로세스 기록 유지 시간 |
+| `MCP_MAX_PROCESSES` | `128` | 최대 프로세스 기록 수 |
+| `MCP_MAX_FILE_CHUNK_BYTES` | `1048576` | 파일 전송 청크 크기 |
+| `MCP_MAX_EDIT_FILE_BYTES` | `67108864` | 텍스트 편집 최대 파일 크기 |
 
-See [`.env.example`](.env.example) and [`deploy/project-moon.env.example`](deploy/project-moon.env.example) for deployable examples.
+자세한 예시는 다음 파일을 참고하세요.
 
-## Repository layout
+- [`.env.example`](.env.example)
+- [`deploy/project-moon.env.example`](deploy/project-moon.env.example)
+- [`tunneling/.env.local.example`](tunneling/.env.local.example)
 
-| Path | Purpose |
+---
+
+# 저장소 구조
+
+| 경로 | 역할 |
 |---|---|
-| `src/http-server.ts` | Stateless Streamable HTTP transport, auth routing, and health endpoint |
-| `src/mcp-server.ts` | MCP server metadata and tool registration |
-| `src/exec-tools.ts` | Commands, scripts, and managed-process tools |
-| `src/file-service.ts` | Host filesystem implementation |
-| `src/file-tools.ts` | Filesystem MCP schemas and registration |
-| `src/oauth.ts` | DCR, PKCE, token issuance/refresh/revocation, approval UI |
-| `src/review/` | Provider-independent Git review state machine, tools, QA, and worktrees |
-| `docs/code-convention.yaml` | Project-specific review conventions |
-| `docs/adr.yaml` | Architecture decisions consumed by review criteria generation |
-| `harnesses/code-review/` | Review workflow documentation and prompt contracts |
-| `vendor/mafia-codereview-harness/` | Upstream review-harness provenance |
-| `deploy/` | systemd, environment-file, and Nginx examples |
-| `test/all-tools.integration.test.ts` | Real MCP integration coverage for all 26 tools |
-| `test/` | Configuration, process, file, MCP, auth, OAuth, and integration tests |
+| `src/http-server.ts` | HTTP 전송, 인증 라우팅, Health 엔드포인트 |
+| `src/mcp-server.ts` | MCP 서버 및 도구 등록 |
+| `src/exec-tools.ts` | 명령·스크립트·프로세스 도구 |
+| `src/file-service.ts` | 호스트 파일시스템 구현 |
+| `src/file-tools.ts` | 파일 MCP 도구 |
+| `src/oauth.ts` | DCR, PKCE, 토큰 발급·갱신·폐기 |
+| `src/review/` | Git 코드 리뷰 상태 머신, Worktree, QA |
+| `Start-PublicMcp.ps1` | Windows 공개 MCP 시작 및 Funnel 자동 구성 |
+| `Stop-PublicMcp.ps1` | 공개 MCP 중지 |
+| `Get-OAuthApprovalKey.ps1` | OAuth 승인 키 조회 |
+| `Test-Gpu.ps1` | NVIDIA GPU 연결 검증 |
+| `tunneling/` | Docker/Nginx/Tailscale 배포 구성 |
+| `deploy/` | Linux systemd/Nginx 배포 예제 |
+| `docs/code-convention.yaml` | 프로젝트 코드 리뷰 규칙 |
+| `docs/adr.yaml` | Architecture Decision Record |
+| `harnesses/code-review/` | 코드 리뷰 하니스 문서와 프롬프트 계약 |
+| `test/` | 단위·통합 테스트 |
 
-## Upstream and attribution
+Windows Docker 설치에 대한 더 자세한 설명은 [`LOCAL_DOCKER_SETUP.md`](LOCAL_DOCKER_SETUP.md)를 참고하세요.
 
-Project Moon is derived from the MIT-licensed [`kstost/cokacremote`](https://github.com/kstost/cokacremote) project. The original copyright and license notice are preserved in [`LICENSE`](LICENSE).
+---
 
-The code-review workflow is adapted from the MIT-licensed [`vibemafiaclub/mafia-codereview-harness`](https://github.com/vibemafiaclub/mafia-codereview-harness). Project Moon reimplements the workflow concepts as provider-independent MCP tools rather than depending on the original Claude Code plugin at runtime. Detailed provenance is recorded in [`vendor/mafia-codereview-harness/SOURCE.md`](vendor/mafia-codereview-harness/SOURCE.md).
+# Secret 및 Git 관리
 
-## License
+실제 인증 정보는 저장소에 커밋하지 마세요.
+
+루트 `.gitignore`는 다음과 같은 로컬·민감 파일을 기본적으로 제외합니다.
+
+- `.env`, `.env.*`
+- `*.pem`, `*.key`, `*.p12`, `*.pfx`
+- `.ssh/`
+- `credentials*.json`
+- `client_secret*.json`
+- `service-account*.json`
+- `.secrets/`, `secrets/`
+- `*.token`, `*.secret`
+- `.cloudflare/`, `.tailscale/`
+- OAuth runtime state
+- Project Moon 백업 아카이브
+- `.moon/`
+- `.project-moon-worktrees/`
+
+예제 설정 파일만 저장소에 포함하고 실제 값은 로컬 파일 또는 Secret Manager에 보관하는 방식을 권장합니다.
+
+---
+
+# 기반 프로젝트 및 출처
+
+Project Moon은 MIT 라이선스의 [`kstost/cokacremote`](https://github.com/kstost/cokacremote)를 기반으로 발전한 프로젝트입니다. 원 프로젝트의 저작권 및 라이선스 고지는 [`LICENSE`](LICENSE)에 보존되어 있습니다.
+
+코드 리뷰 워크플로는 MIT 라이선스의 [`vibemafiaclub/mafia-codereview-harness`](https://github.com/vibemafiaclub/mafia-codereview-harness)의 핵심 개념을 참고해 Project Moon용 MCP 도구로 재구현했습니다.
+
+상세 출처:
+
+- [`vendor/mafia-codereview-harness/SOURCE.md`](vendor/mafia-codereview-harness/SOURCE.md)
+
+---
+
+# 라이선스
 
 [MIT License](LICENSE)
 
-## Disclaimer
+---
 
-THIS SOFTWARE IS PROVIDED “AS IS,” WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT.
+# 면책 고지
 
-IN NO EVENT SHALL THE AUTHOR, COPYRIGHT HOLDERS, OR CONTRIBUTORS BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR THE USE OF THE SOFTWARE.
+이 소프트웨어는 상품성, 특정 목적 적합성 및 비침해성에 대한 보증을 포함하여 명시적 또는 묵시적인 어떠한 보증도 없이 **있는 그대로(AS IS)** 제공됩니다.
 
-This includes, but is not limited to, data loss or corruption, system damage or malfunction, security breaches or vulnerabilities, financial loss, and direct or indirect consequential damages. The user assumes full responsibility for the consequences of operating a full-access remote development service.
+저작권자와 기여자는 이 소프트웨어의 사용 또는 기타 거래로 인해 발생하는 데이터 손실·손상, 시스템 장애, 보안 사고, 취약점, 재산상 손실 및 직·간접적 손해에 대해 책임을 지지 않습니다.
+
+Project Moon은 의도적으로 강력한 시스템 접근 권한을 제공하는 도구입니다. 운영 환경과 권한 범위, 인증 방식, 네트워크 공개 범위를 확인하고 사용하는 책임은 사용자에게 있습니다.
