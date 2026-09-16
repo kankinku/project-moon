@@ -47,4 +47,38 @@ describe("task repository context index", () => {
     expect(summary.relevantFiles.map((entry) => entry.path)).toContain("src/auth/oauth-service.ts");
     expect(summary.relevantFiles.map((entry) => entry.path)).not.toContain("src/billing/invoice-service.ts");
   });
+
+
+  it("filters generic self-hosting words instead of flooding context with unrelated tests and deploy files", () => {
+    const index = {
+      schemaVersion: 1 as const,
+      headSha: "abc123",
+      generatedAt: new Date(0).toISOString(),
+      counts: { total: 5, source: 2, test: 1, docs: 0, config: 1, other: 1 },
+      modules: [],
+      files: [
+        { path: "src/task/task-service.ts", kind: "source" as const, module: "src/task" },
+        { path: "scripts/verify-public-oauth.mjs", kind: "source" as const, module: "scripts" },
+        { path: "test/random.test.ts", kind: "test" as const, module: "test" },
+        { path: "deploy/project-moon.service", kind: "other" as const, module: "deploy" },
+        { path: "moon.config.json", kind: "config" as const, module: "root" },
+      ],
+    };
+    const summary = repositoryContextSummary(
+      index,
+      "Verify the AI-native harness self-hosting lifecycle without changing tracked code. This is a smoke test against Project Moon itself with validation evidence only.",
+    ) as { queryTerms: string[]; relevantFiles: Array<{ path: string }> };
+    const paths = summary.relevantFiles.map((entry) => entry.path);
+
+    expect(summary.queryTerms).toContain("harness");
+    expect(summary.queryTerms).toContain("task");
+    expect(summary.queryTerms).not.toContain("test");
+    expect(summary.queryTerms).not.toContain("verify");
+    expect(summary.queryTerms).not.toContain("moon");
+    expect(paths).toContain("src/task/task-service.ts");
+    expect(paths).toContain("moon.config.json");
+    expect(paths).not.toContain("test/random.test.ts");
+    expect(paths).not.toContain("deploy/project-moon.service");
+    expect(paths).not.toContain("scripts/verify-public-oauth.mjs");
+  });
 });

@@ -38,9 +38,23 @@ const CONFIG_BASENAMES = new Set([
   "requirements.txt", "moon.config.json",
 ]);
 const STOP_WORDS = new Set([
-  "the", "and", "for", "with", "from", "this", "that", "into", "update", "change", "improve", "system",
-  "feature", "task", "code", "project", "작업", "기능", "개선", "수정", "시스템", "코드", "프로젝트", "구현",
+  "the", "and", "for", "with", "from", "this", "that", "into", "update", "change", "changes", "changing",
+  "improve", "system", "feature", "code", "project", "repository", "repo", "verify", "verification", "without",
+  "tracked", "is", "smoke", "test", "tests", "against", "moon", "itself", "desired", "outcome", "evidence",
+  "only", "no", "should", "current", "lifecycle", "product",
+  "작업", "기능", "개선", "수정", "시스템", "코드", "프로젝트", "구현", "테스트", "확인", "현재",
 ]);
+const TERM_ALIASES: Record<string, string[]> = {
+  harness: ["task"],
+  agent: ["task"],
+  agents: ["task"],
+  validation: ["validate"],
+  validator: ["validation", "validate"],
+  oauth: ["auth"],
+  documentation: ["docs", "audit"],
+  document: ["docs", "audit"],
+  architecture: ["architecture"],
+};
 
 function normalized(relative: string): string {
   return relative.replaceAll("\\", "/");
@@ -78,8 +92,10 @@ function moduleName(relative: string): string {
 }
 
 function queryTerms(query: string): string[] {
-  const matches = query.toLowerCase().match(/[\p{L}\p{N}_.-]{2,}/gu) ?? [];
-  return [...new Set(matches.filter((term) => !STOP_WORDS.has(term)))];
+  const matches = query.toLowerCase().match(/[\p{L}\p{N}]+(?:[-_][\p{L}\p{N}]+)*/gu) ?? [];
+  const terms = matches.filter((term) => term.length >= 2 && !STOP_WORDS.has(term));
+  const expanded = terms.flatMap((term) => [term, ...(TERM_ALIASES[term] ?? [])]);
+  return [...new Set(expanded)];
 }
 
 function relevanceScore(file: RepositoryIndexFile, terms: string[]): number {
