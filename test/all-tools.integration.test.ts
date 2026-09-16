@@ -35,6 +35,12 @@ const ALL_TOOLS = [
   "review_worktree",
   "run_script",
   "stat_path",
+  "task_complete",
+  "task_context",
+  "task_record",
+  "task_start",
+  "task_status",
+  "task_validate",
   "terminate_process",
   "upload_file",
   "write_file",
@@ -67,6 +73,12 @@ const EXPECTED_ANNOTATIONS = {
   review_worktree: [false, true, false, false],
   run_script: [false, true, false, true],
   stat_path: [true, false, true, false],
+  task_complete: [false, true, false, false],
+  task_context: [true, false, true, false],
+  task_record: [false, true, false, false],
+  task_start: [false, false, false, false],
+  task_status: [true, false, true, false],
+  task_validate: [false, true, false, true],
   terminate_process: [false, true, false, false],
   upload_file: [false, true, true, false],
   write_file: [false, true, false, false],
@@ -847,6 +859,175 @@ describe.sequential("all registered MCP tools", () => {
       cwd: testRoot,
       force: true,
     })).toMatchObject({ removed: true });
+  }, 30_000);
+
+  it("runs the risk-aware task harness lifecycle", async () => {
+    const repo = path.join(testRoot, "task-harness-repo");
+    await callOk("make_directory", { path: repo, recursive: true });
+    const harnessConfig = {
+      schemaVersion: 1,
+      validation: {
+        profileOrder: ["fast", "normal", "release"],
+        profiles: {
+          fast: ["test -f value.txt"],
+          normal: ["test -f value.txt", "grep -q changed value.txt"],
+          release: [
+            "test -f value.txt",
+            "grep -q changed value.txt",
+            "test -f secure/flag.txt",
+          ],
+        },
+        riskProfiles: { low: "fast", medium: "normal", high: "release" },
+      },
+      risk: {
+        highPathPatterns: ["^secure/"],
+        mediumPathPatterns: ["^value\\.txt$"],
+        highKeywords: ["security-critical"],
+        mediumKeywords: ["feature"],
+      },
+    };
+    await callOk("write_file", {
+      path: "moon.config.json",
+      cwd: repo,
+      content: `${JSON.stringify(harnessConfig, null, 2)}\n`,
+    });
+    await callOk("exec_command", {
+      cmd: [
+        "git init -q -b main",
+        "git config user.email e2e@example.invalid",
+        "git config user.name E2E",
+        "printf 'base\\n' > value.txt",
+        "git add value.txt moon.config.json",
+        "git commit -qm base",
+      ].join(" && "),
+      workdir: repo,
+      yieldTimeMs: 3000,
+    });
+
+    const started = await callOk("task_start", {
+      repoPath: repo,
+      request: "Update the sample value while preserving repository structure.",
+      domainContext: "The value is a stand-in for a user-visible business result.",
+    });
+    const runId = String(started.runId);
+    expect(started).toMatchObject({
+      state: "CONTEXT_READY",
+      risk: { level: "low" },
+      requiredValidationProfile: "fast",
+      dirtyAtStart: false,
+    });
+
+    const briefContext = await callOk("task_context", {
+      repoPath: repo,
+      runId,
+      stage: "brief",
+    });
+    expect(String(briefContext.request)).toContain("sample value");
+    expect(briefContext).toMatchObject({ requiredValidationProfile: "fast" });
+
+    expect(await callError("task_record", {
+      repoPath: repo,
+      runId,
+      kind: "plan",
+      content: "This must fail because no brief exists yet.",
+    })).toContain("context_brief");
+
+    await callOk("task_record", {
+      repoPath: repo,
+      runId,
+      kind: "context_brief",
+      content: "# Context Brief\nThe repository is intentionally tiny and value.txt is the target.",
+    });
+    await callOk("task_record", {
+      repoPath: repo,
+      runId,
+      kind: "plan",
+      content: "# Plan\nChange value.txt, then run the risk-required validation profile.",
+    });
+
+    await callOk("write_file", {
+      path: "value.txt",
+      cwd: repo,
+      content: "changed\n",
+    });
+    expect(await callError("task_validate", {
+      repoPath: repo,
+      runId,
+      profile: "fast",
+      timeoutMs: 3000,
+    })).toContain("weaker than required profile normal");
+
+    const normalValidation = await callOk("task_validate", {
+      repoPath: repo,
+      runId,
+      timeoutMs: 3000,
+    });
+    expect(normalValidation).toMatchObject({
+      state: "VERIFIED",
+      passed: true,
+      profile: "normal",
+      requiredProfile: "normal",
+      risk: { level: "medium" },
+    });
+    expect(await callOk("task_status", { repoPath: repo, runId })).toMatchObject({
+      effectiveState: "VERIFIED",
+      validationFresh: true,
+      readyToComplete: true,
+      risk: { level: "medium" },
+    });
+
+    await callOk("make_directory", { path: "secure", cwd: repo, recursive: true });
+    await callOk("write_file", {
+      path: "secure/flag.txt",
+      cwd: repo,
+      content: "requires-release-validation\n",
+    });
+    expect(await callOk("task_status", { repoPath: repo, runId })).toMatchObject({
+      effectiveState: "STALE",
+      validationFresh: false,
+      stale: true,
+      requiredValidationProfile: "release",
+      risk: { level: "high" },
+    });
+    expect(await callError("task_complete", {
+      repoPath: repo,
+      runId,
+    })).toMatch(/changed after validation|fresh passing validation|rerun task_validate/);
+
+    const releaseValidation = await callOk("task_validate", {
+      repoPath: repo,
+      runId,
+      timeoutMs: 3000,
+    });
+    expect(releaseValidation).toMatchObject({
+      state: "VERIFIED",
+      passed: true,
+      profile: "release",
+      requiredProfile: "release",
+      risk: { level: "high" },
+    });
+    expect(await callOk("task_complete", {
+      repoPath: repo,
+      runId,
+      summary: "Validated the medium-risk file change and high-risk secure path with release checks.",
+    })).toMatchObject({ state: "COMPLETE", validationProfile: "release" });
+    expect(await callOk("task_status", { repoPath: repo, runId })).toMatchObject({
+      effectiveState: "COMPLETE",
+      complete: true,
+      validationFresh: true,
+    });
+
+    await callOk("write_file", {
+      path: "value.txt",
+      cwd: repo,
+      content: "changed-again\n",
+    });
+    expect(await callOk("task_status", { repoPath: repo, runId })).toMatchObject({
+      effectiveState: "STALE",
+      stale: true,
+      complete: false,
+      validationFresh: false,
+    });
   }, 30_000);
 
   it("runs the provider-independent review harness lifecycle", async () => {

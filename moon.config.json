@@ -1,0 +1,74 @@
+{
+  "schemaVersion": 1,
+  "validation": {
+    "profileOrder": ["fast", "normal", "release"],
+    "profiles": {
+      "fast": [
+        "npm run typecheck"
+      ],
+      "normal": [
+        "npm run typecheck",
+        "npm test"
+      ],
+      "release": [
+        "npm run typecheck",
+        "npm test",
+        "npm run build"
+      ]
+    },
+    "riskProfiles": {
+      "low": "fast",
+      "medium": "normal",
+      "high": "release"
+    }
+  },
+  "risk": {
+    "highPathPatterns": [
+      "^src/(auth|oauth|http-server)\\.ts$",
+      "^src/task/task-service\\.ts$",
+      "^(deploy|tunneling)/",
+      "^(Start-PublicMcp|Stop-PublicMcp|Get-OAuthApprovalKey)\\.ps1$",
+      "^\\.github/workflows/"
+    ],
+    "mediumPathPatterns": [
+      "^src/",
+      "^test/",
+      "^package(-lock)?\\.json$",
+      "^tsconfig\\.json$",
+      "^moon\\.config\\.json$"
+    ],
+    "highKeywords": [
+      "auth",
+      "oauth",
+      "token",
+      "secret",
+      "security",
+      "permission",
+      "deploy",
+      "production",
+      "migration",
+      "database",
+      "network",
+      "delete",
+      "인증",
+      "권한",
+      "배포",
+      "마이그레이션",
+      "보안",
+      "네트워크",
+      "삭제"
+    ],
+    "mediumKeywords": [
+      "api",
+      "dependency",
+      "refactor",
+      "service",
+      "schema",
+      "feature",
+      "기능",
+      "리팩터링",
+      "의존성",
+      "스키마"
+    ]
+  }
+}
