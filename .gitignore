@@ -48,3 +48,40 @@ Thumbs.db
 # Project Moon review runtime artifacts
 .moon/
 .project-moon-worktrees/
+
+# Secret material and provider credentials
+.secrets/
+secrets/
+*.secret
+*.secrets
+*.token
+*.tokens
+credentials.json
+credentials.*.json
+client_secret*.json
+service-account*.json
+service_account*.json
+cloudflared/*.json
+.cloudflare/
+.tailscale/
+
+# Backup/export artifacts that may contain OAuth or tunnel credentials
+workmachine-full-backup*
+project-moon-backup*
+*.backup.tar
+*.backup.tar.gz
+*.backup.tgz
+*.age
+*.gpg
+
+# Local runtime/provider state
+.envrc
+.direnv/
+.auth/
+.runtime/
+state/
+*.sqlite
+*.sqlite3
+*.db-journal
+*.db-wal
+*.db-shm
