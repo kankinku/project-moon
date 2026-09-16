@@ -9,15 +9,18 @@
     "profiles": {
       "fast": [
         "npm run check:architecture",
+        "npm run check:docs",
         "npm run typecheck"
       ],
       "normal": [
         "npm run check:architecture",
+        "npm run check:docs",
         "npm run typecheck",
         "npm test"
       ],
       "release": [
         "npm run check:architecture",
+        "npm run check:docs",
         "npm run typecheck",
         "npm test",
         "npm run build"
@@ -140,6 +143,17 @@
         "pattern": "^src/task/task-repository\\.ts$",
         "max": 200
       }
+    ]
+  },
+  "knowledge": {
+    "maxPermanentDocs": 50,
+    "ephemeralPatterns": [
+      "^docs/(?:plans?|specs?)/",
+      "^docs/superpowers/(?:plans?|specs?)/",
+      "(^|/)(?:PLAN|IMPLEMENTATION_PLAN|TASK_NOTES)\\.md$"
+    ],
+    "generatedPatterns": [
+      "^\\.moon/"
     ]
   }
 }

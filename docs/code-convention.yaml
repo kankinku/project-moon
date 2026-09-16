@@ -39,3 +39,14 @@ security:
   - id: SEC-001
     rule: Project Moon은 호스트 전체 권한을 가질 수 있으므로 인증 우회, 경로 제한 약화, 명령 실행 범위 확대는 보안 영향과 테스트를 반드시 동반한다.
     stacks: [security, mcp]
+task_harness:
+  - id: TASK-001
+    rule: 실질적인 저장소 변경은 구현 전에 현재 구조와 제약을 브리핑하고 계획을 기록한 뒤 위험도에 맞는 프로그램적 검증을 통과해야 한다.
+    stacks: [task, harness]
+  - id: TASK-002
+    rule: 진행 중인 task run의 검증 정책은 시작 시점에 고정하며 에이전트가 작업 중 현재 설정을 수정해 기존 게이트를 약화할 수 없어야 한다.
+    stacks: [task, validation, security]
+knowledge:
+  - id: KNOW-001
+    rule: 구현 완료 후 일회성 계획·설계 초안은 영구 지식으로 유지하지 않고, 지속되어야 할 결정만 코드·테스트·규칙·ADR에 흡수한다.
+    stacks: [knowledge, docs]

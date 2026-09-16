@@ -15,7 +15,7 @@ The Tailscale DNS name is stable for the machine. `Start-PublicMcp.ps1` pins the
 
 ## Security boundary
 
-- Only [`shared/`](shared/) is mounted into the workmachine as `/shared`.
+- Only `shared/` is mounted into the workmachine as `/shared`.
 - The Docker socket is not mounted.
 - Port `2999` remains host-loopback-only (`127.0.0.1:2999`). It is not bound to the LAN or directly to the public internet.
 - Public traffic reaches the loopback listener through the host Tailscale daemon and Funnel.

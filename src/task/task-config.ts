@@ -55,6 +55,18 @@ function assertConfig(config: MoonHarnessConfig): void {
       throw new Error(`Invalid risk path regex in moon.config.json: ${pattern}`);
     }
   }
+  if (config.knowledge) {
+    if (!Number.isInteger(config.knowledge.maxPermanentDocs) || config.knowledge.maxPermanentDocs <= 0) {
+      throw new Error("knowledge.maxPermanentDocs must be a positive integer");
+    }
+    for (const pattern of [...config.knowledge.ephemeralPatterns, ...config.knowledge.generatedPatterns]) {
+      try {
+        new RegExp(pattern);
+      } catch {
+        throw new Error(`Invalid knowledge regex in moon.config.json: ${pattern}`);
+      }
+    }
+  }
 }
 
 export async function loadHarnessConfig(repoRoot: string): Promise<{ config: MoonHarnessConfig; configFile?: string }> {
@@ -70,6 +82,7 @@ export async function loadHarnessConfig(repoRoot: string): Promise<{ config: Moo
     }
     if (parsed.risk) config.risk = { ...config.risk, ...parsed.risk };
     if (parsed.architecture) config.architecture = parsed.architecture;
+    if (parsed.knowledge) config.knowledge = parsed.knowledge;
     assertConfig(config);
     return { config, configFile: "moon.config.json" };
   }

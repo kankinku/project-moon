@@ -27,3 +27,23 @@
     design-intent, review-comments, QA 로그 같은 실행별 증거를 대상 feature diff에 자동 포함하면 리뷰 시스템 자체가 검토 대상 변경을 오염시키고 지속적으로 dirty working tree를 만든다.
   decision: 실행별 산출물은 대상 저장소의 .moon/reviews 아래에 저장하되 해당 저장소의 local .git/info/exclude에 .moon/을 등록한다. 프로젝트가 명시적으로 산출물을 버전 관리하려는 경우에만 별도 정책으로 승격한다.
   consequence: 리뷰 증거는 호스트에 유지되면서 일반 feature diff에는 포함되지 않는다. 장기 중앙 보관은 후속 artifact store 기능으로 확장한다.
+
+- id: ADR-004
+  title: Stable public MCP ingress uses Tailscale Funnel
+  status: adopted
+  date: 2026-09-16
+  stacks: [network, oauth, deployment]
+  context: |
+    임시 공개 터널 주소가 재시작마다 바뀌면 MCP 공개 URL과 OAuth issuer/resource가 어긋나 연결이 깨질 수 있다. 공개 주소를 코드나 수동 설정에 고정하면 실제 런타임 주소와 다시 불일치할 위험도 있다.
+  decision: Windows 공개 실행 경로는 Tailscale Funnel을 사용하고 Start-PublicMcp.ps1이 Funnel이 반환한 실제 *.ts.net HTTPS URL을 먼저 확인한 뒤 동일 URL로 OAuth public URL, issuer, resource를 구성한다.
+  consequence: 공개 주소와 OAuth identity가 같은 런타임 사실에서 파생된다. 과거 Quick Tunnel/Named Tunnel 구현 계획은 런타임 스펙으로 취급하지 않는다.
+
+- id: ADR-005
+  title: AI task policy is pinned and validated programmatically
+  status: adopted
+  date: 2026-09-16
+  stacks: [task, harness, validation]
+  context: |
+    에이전트가 구현 중 검증 설정이나 아키텍처 규칙을 약화할 수 있다면 동일 작업에서 자신의 품질 게이트를 우회할 수 있다. 또한 검증 이후 코드가 변경되면 이전 QA 결과는 현재 코드의 증거가 아니다.
+  decision: task_start 시점의 하니스 정책을 .moon 작업 산출물에 SHA-256과 함께 고정한다. 위험도 판정과 task_validate의 검증 명령은 고정 정책을 사용하고, 검증한 Git/working-tree fingerprint가 달라지면 완료 상태를 STALE로 처리한다.
+  consequence: 작업 도중 moon.config.json이 바뀌어도 진행 중인 task run의 기준은 약화되지 않는다. 정책 변경을 적용하려면 새 task run을 시작해야 하며, 검증 이후 변경에는 재검증이 필요하다.

@@ -101,4 +101,9 @@ export interface MoonHarnessConfig {
     deny: ArchitectureDenyRule[];
     maxFileLines: ArchitectureMaxFileLinesRule[];
   };
+  knowledge?: {
+    maxPermanentDocs: number;
+    ephemeralPatterns: string[];
+    generatedPatterns: string[];
+  };
 }
