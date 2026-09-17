@@ -14,6 +14,8 @@ services:
     environment:
       TZ: "${TZ:-Asia/Seoul}"
       MCP_WORKFLOW_MODE: "${MCP_WORKFLOW_MODE:-auto}"
+      MCP_RUNTIME_ROLE: "developer"
+      MCP_MERGE_AUDIT_ENABLED: "false"
       MCP_ALLOWED_HOSTS: "${MCP_ALLOWED_HOSTS:-}"
       MCP_PUBLIC_URL: "${MCP_PUBLIC_URL:-}"
       MCP_OAUTH_ISSUER: "${MCP_PUBLIC_URL:-}"
@@ -31,5 +33,42 @@ services:
         target: /var/lib/project-moon
     stop_grace_period: 30s
 
+  merge-auditor:
+    profiles: ["merge-auditor"]
+    build:
+      context: ..
+      dockerfile: tunneling/Dockerfile
+      args:
+        TIMEZONE: "${TZ:-Asia/Seoul}"
+    image: "${WORKMACHINE_IMAGE:-project-moon-local:0.1.0}"
+    container_name: project-moon-merge-auditor
+    hostname: project-moon-merge-auditor
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${MERGE_AUDITOR_PORT:-3999}:2999"
+    environment:
+      TZ: "${TZ:-Asia/Seoul}"
+      MCP_WORKFLOW_MODE: "harness"
+      MCP_RUNTIME_ROLE: "merge-auditor"
+      MCP_MERGE_AUDIT_ENABLED: "true"
+      MCP_MERGE_AUDIT_STATE_DIR: "/var/lib/project-moon/merge-audits"
+      MCP_GITHUB_AUDITOR_LOGIN: "${MCP_GITHUB_AUDITOR_LOGIN:-}"
+      MCP_ALLOWED_HOSTS: "${MERGE_AUDITOR_ALLOWED_HOSTS:-localhost,127.0.0.1}"
+      MCP_ALLOW_NO_AUTH: "false"
+      MCP_OAUTH_ENABLED: "false"
+      MCP_AUTH_TOKEN: "${MERGE_AUDITOR_AUTH_TOKEN:-}"
+      MCP_DEFAULT_CWD: "/audit/repo"
+      GH_CONFIG_DIR: "/var/lib/project-moon/gh"
+    volumes:
+      - type: bind
+        source: "${MERGE_AUDITOR_REPO_PATH:-..}"
+        target: /audit/repo
+        read_only: true
+      - type: volume
+        source: project-moon-auditor-state
+        target: /var/lib/project-moon
+    stop_grace_period: 30s
+
 volumes:
   project-moon-local-state:
+  project-moon-auditor-state:

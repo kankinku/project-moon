@@ -1,6 +1,7 @@
 import path from "node:path";
 
 export type WorkflowMode = "auto" | "direct" | "harness";
+export type RuntimeRole = "developer" | "merge-auditor";
 
 export interface AppConfig {
   host: string;
@@ -29,18 +30,16 @@ export interface AppConfig {
   maxFileChunkBytes: number;
   maxEditFileBytes: number;
   workflowMode: WorkflowMode;
+  runtimeRole: RuntimeRole;
+  mergeAuditEnabled: boolean;
+  mergeAuditStateDir: string | undefined;
+  githubAuditorLogin: string | undefined;
 }
 
 function parseBoolean(value: string | undefined, fallback: boolean): boolean {
-  if (value === undefined || value === "") {
-    return fallback;
-  }
-  if (["1", "true", "yes", "on"].includes(value.toLowerCase())) {
-    return true;
-  }
-  if (["0", "false", "no", "off"].includes(value.toLowerCase())) {
-    return false;
-  }
+  if (value === undefined || value === "") return fallback;
+  if (["1", "true", "yes", "on"].includes(value.toLowerCase())) return true;
+  if (["0", "false", "no", "off"].includes(value.toLowerCase())) return false;
   throw new Error(`Invalid boolean value: ${value}`);
 }
 
@@ -51,9 +50,7 @@ function parseInteger(
   minimum: number,
   maximum = Number.MAX_SAFE_INTEGER,
 ): number {
-  if (value === undefined || value === "") {
-    return fallback;
-  }
+  if (value === undefined || value === "") return fallback;
   const normalized = value.trim();
   const parsed = /^[+-]?\d+$/.test(normalized) ? Number(normalized) : Number.NaN;
   if (!Number.isSafeInteger(parsed) || parsed < minimum || parsed > maximum) {
@@ -65,27 +62,26 @@ function parseInteger(
   return parsed;
 }
 
-
 function parseWorkflowMode(value: string | undefined): WorkflowMode {
   const normalized = value?.trim().toLowerCase() || "auto";
-  if (["auto", "direct", "harness"].includes(normalized)) {
-    return normalized as WorkflowMode;
-  }
+  if (["auto", "direct", "harness"].includes(normalized)) return normalized as WorkflowMode;
   throw new Error("MCP_WORKFLOW_MODE must be one of: auto, direct, harness");
+}
+
+function parseRuntimeRole(value: string | undefined): RuntimeRole {
+  const normalized = value?.trim().toLowerCase() || "developer";
+  if (normalized === "developer" || normalized === "merge-auditor") return normalized;
+  throw new Error("MCP_RUNTIME_ROLE must be one of: developer, merge-auditor");
 }
 
 function normalizeEndpoint(value: string | undefined): string {
   const endpoint = value?.trim() || "/mcp";
-  if (!endpoint.startsWith("/")) {
-    throw new Error("MCP_ENDPOINT must start with '/'");
-  }
+  if (!endpoint.startsWith("/")) throw new Error("MCP_ENDPOINT must start with '/'");
   return endpoint.length > 1 ? endpoint.replace(/\/+$/, "") : endpoint;
 }
 
 function normalizeOAuthUrl(value: string | undefined, name: string): string {
-  if (!value) {
-    throw new Error(`${name} is required when MCP_OAUTH_ENABLED=true`);
-  }
+  if (!value) throw new Error(`${name} is required when MCP_OAUTH_ENABLED=true`);
   let url: URL;
   try {
     url = new URL(value);
@@ -99,12 +95,8 @@ function normalizeOAuthUrl(value: string | undefined, name: string): string {
   if (url.protocol !== "https:" && !(url.protocol === "http:" && isLoopback)) {
     throw new Error(`${name} must use HTTPS (HTTP is allowed only for loopback tests)`);
   }
-  if (url.username || url.password) {
-    throw new Error(`${name} must not contain user credentials`);
-  }
-  if (url.search || url.hash) {
-    throw new Error(`${name} must not contain a query string or fragment`);
-  }
+  if (url.username || url.password) throw new Error(`${name} must not contain user credentials`);
+  if (url.search || url.hash) throw new Error(`${name} must not contain a query string or fragment`);
   return url.href;
 }
 
@@ -133,7 +125,6 @@ export function loadConfig(
   const allowedHosts = env.MCP_ALLOWED_HOSTS?.split(",")
     .map((host) => host.trim().toLowerCase())
     .filter(Boolean);
-
   const endpoint = normalizeEndpoint(env.MCP_ENDPOINT);
   const publicUrl = env.MCP_PUBLIC_URL?.trim().replace(/\/+$/, "") || undefined;
   const oauthIssuerUrl = oauthEnabled
@@ -145,6 +136,7 @@ export function loadConfig(
         "MCP_OAUTH_RESOURCE",
       )
     : undefined;
+  const mergeAuditStateDir = env.MCP_MERGE_AUDIT_STATE_DIR?.trim();
 
   return {
     host: env.MCP_HOST?.trim() || "0.0.0.0",
@@ -152,13 +144,7 @@ export function loadConfig(
     endpoint,
     publicUrl,
     allowedHosts: allowedHosts && allowedHosts.length > 0 ? allowedHosts : undefined,
-    trustProxyHops: parseInteger(
-      env.MCP_TRUST_PROXY_HOPS,
-      0,
-      "MCP_TRUST_PROXY_HOPS",
-      0,
-      16,
-    ),
+    trustProxyHops: parseInteger(env.MCP_TRUST_PROXY_HOPS, 0, "MCP_TRUST_PROXY_HOPS", 0, 16),
     authToken,
     allowNoAuth,
     oauthEnabled,
@@ -166,8 +152,7 @@ export function loadConfig(
     oauthIssuerUrl,
     oauthResourceUrl,
     oauthStateFile: path.resolve(
-      env.MCP_OAUTH_STATE_FILE?.trim() ||
-        path.join(processCwd, ".project-moon-oauth-state.json"),
+      env.MCP_OAUTH_STATE_FILE?.trim() || path.join(processCwd, ".project-moon-oauth-state.json"),
     ),
     oauthAccessTokenTtlSeconds: parseInteger(
       env.MCP_OAUTH_ACCESS_TOKEN_TTL_SECONDS,
@@ -188,8 +173,7 @@ export function loadConfig(
       60,
     ),
     defaultCwd,
-    defaultShell:
-      env.MCP_DEFAULT_SHELL?.trim() || env.SHELL?.trim() || "/bin/bash",
+    defaultShell: env.MCP_DEFAULT_SHELL?.trim() || env.SHELL?.trim() || "/bin/bash",
     maxRequestBody: env.MCP_MAX_REQUEST_BODY?.trim() || "8mb",
     maxOutputBytes: parseInteger(
       env.MCP_MAX_OUTPUT_BYTES,
@@ -209,12 +193,7 @@ export function loadConfig(
       "MCP_PROCESS_RETENTION_MS",
       1000,
     ),
-    maxProcesses: parseInteger(
-      env.MCP_MAX_PROCESSES,
-      128,
-      "MCP_MAX_PROCESSES",
-      1,
-    ),
+    maxProcesses: parseInteger(env.MCP_MAX_PROCESSES, 128, "MCP_MAX_PROCESSES", 1),
     maxFileChunkBytes: parseInteger(
       env.MCP_MAX_FILE_CHUNK_BYTES,
       1024 * 1024,
@@ -228,5 +207,9 @@ export function loadConfig(
       4096,
     ),
     workflowMode: parseWorkflowMode(env.MCP_WORKFLOW_MODE),
+    runtimeRole: parseRuntimeRole(env.MCP_RUNTIME_ROLE),
+    mergeAuditEnabled: parseBoolean(env.MCP_MERGE_AUDIT_ENABLED, false),
+    mergeAuditStateDir: mergeAuditStateDir ? path.resolve(mergeAuditStateDir) : undefined,
+    githubAuditorLogin: env.MCP_GITHUB_AUDITOR_LOGIN?.trim() || undefined,
   };
 }

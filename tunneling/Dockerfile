@@ -22,6 +22,7 @@ RUN ln -snf /usr/share/zoneinfo/${TZ} /etc/localtime \
     && apt-get install -y --no-install-recommends \
         ca-certificates \
         curl \
+        gh \
         git \
         nginx \
         openssl \
@@ -110,21 +111,6 @@ location ~ ^/(authorize|token|register|revoke)$ {
     proxy_pass http://127.0.0.1:3000;
 }
 NGINX
-
-# Example: add a new application later without changing the default routes.
-# Create /shared/nginx/routes.d/20-newapp.conf:
-#
-# location = /newapp {
-#     return 308 /newapp/;
-# }
-#
-# location ^~ /newapp/ {
-#     include /etc/nginx/snippets/workmachine-proxy.conf;
-#     proxy_pass http://127.0.0.1:5000/;
-# }
-#
-# Then validate and reload Nginx:
-# nginx -t && nginx -s reload
 
 cat > /etc/supervisor/conf.d/workmachine.conf <<'SUPERVISOR'
 [supervisord]
