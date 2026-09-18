@@ -9,6 +9,14 @@ interface UserInfo {
   login?: string;
 }
 
+interface PullApiInfo {
+  state?: string;
+  draft?: boolean;
+  user?: { login?: string };
+  head?: { sha?: string };
+  base?: { ref?: string; sha?: string };
+}
+
 interface CheckRun {
   __typename?: string;
   name?: string;
@@ -19,14 +27,11 @@ interface CheckRun {
 }
 
 interface PullInfo {
-  headRefOid?: string;
-  state?: string;
-  isDraft?: boolean;
-  author?: { login?: string };
   reviewDecision?: string;
   mergeStateStatus?: string;
   statusCheckRollup?: CheckRun[];
   latestReviews?: Array<{ author?: { login?: string }; state?: string }>;
+  state?: string;
   mergedAt?: string;
   mergedBy?: { login?: string };
   mergeCommit?: { oid?: string };
@@ -36,6 +41,8 @@ export interface ExecuteAuditedMergeInput {
   repository: string;
   pullNumber: number;
   headSha: string;
+  baseBranch: string;
+  baseSha: string;
 }
 
 export interface ExecuteAuditedMergeResult extends Record<string, unknown> {
@@ -43,6 +50,8 @@ export interface ExecuteAuditedMergeResult extends Record<string, unknown> {
   pullNumber: number;
   auditor: string;
   headSha: string;
+  baseBranch: string;
+  baseSha: string;
   mergeCommit: string;
   mergedAt: string;
 }
@@ -101,9 +110,11 @@ export class GitHubCliMergeExecutor {
     if (!Number.isInteger(input.pullNumber) || input.pullNumber <= 0) {
       throw new Error("pullNumber must be a positive integer");
     }
-    if (!/^[0-9a-f]{40}$/i.test(input.headSha)) {
-      throw new Error("headSha must be a full 40-character Git commit SHA");
+    if (!/^[0-9a-f]{40}$/i.test(input.headSha) || !/^[0-9a-f]{40}$/i.test(input.baseSha)) {
+      throw new Error("headSha and baseSha must be full 40-character Git commit SHAs");
     }
+    const baseBranch = input.baseBranch.trim();
+    if (!baseBranch) throw new Error("baseBranch is required");
 
     const user = await this.#json<UserInfo>(["api", "user"]);
     const auditor = user.login?.trim();
@@ -114,6 +125,30 @@ export class GitHubCliMergeExecutor {
       );
     }
 
+    const pullTarget = await this.#json<PullApiInfo>([
+      "api",
+      `repos/${repository}/pulls/${input.pullNumber}`,
+    ]);
+    const author = pullTarget.user?.login?.trim();
+    if (!author) throw new Error("Unable to resolve pull request author");
+    if (auditor.toLowerCase() === author.toLowerCase()) {
+      throw new Error("Merge auditor account must be different from the pull request author");
+    }
+    if (pullTarget.state?.toLowerCase() !== "open") {
+      throw new Error(`Pull request is not open: ${pullTarget.state ?? "unknown"}`);
+    }
+    if (pullTarget.draft === true) throw new Error("Draft pull requests cannot be merged");
+    if (pullTarget.base?.ref !== baseBranch || pullTarget.base?.sha !== input.baseSha) {
+      throw new Error(
+        `Merge audit is STALE: GitHub PR base ${pullTarget.base?.ref ?? "unknown"}@${pullTarget.base?.sha ?? "unknown"} does not match audited base ${baseBranch}@${input.baseSha}`,
+      );
+    }
+    if (pullTarget.head?.sha !== input.headSha) {
+      throw new Error(
+        `Merge audit is STALE: GitHub PR head ${pullTarget.head?.sha ?? "unknown"} does not match audited SHA ${input.headSha}`,
+      );
+    }
+
     const pull = await this.#json<PullInfo>([
       "pr",
       "view",
@@ -121,21 +156,8 @@ export class GitHubCliMergeExecutor {
       "--repo",
       repository,
       "--json",
-      "headRefOid,state,isDraft,author,reviewDecision,mergeStateStatus,statusCheckRollup,latestReviews",
+      "reviewDecision,mergeStateStatus,statusCheckRollup,latestReviews",
     ]);
-
-    const author = pull.author?.login?.trim();
-    if (!author) throw new Error("Unable to resolve pull request author");
-    if (auditor.toLowerCase() === author.toLowerCase()) {
-      throw new Error("Merge auditor account must be different from the pull request author");
-    }
-    if (pull.state !== "OPEN") throw new Error(`Pull request is not open: ${pull.state ?? "unknown"}`);
-    if (pull.isDraft === true) throw new Error("Draft pull requests cannot be merged");
-    if (pull.headRefOid !== input.headSha) {
-      throw new Error(
-        `Merge audit is STALE: GitHub PR head ${pull.headRefOid ?? "unknown"} does not match audited SHA ${input.headSha}`,
-      );
-    }
     if (pull.reviewDecision !== "APPROVED") {
       throw new Error(`Pull request review decision is not APPROVED: ${pull.reviewDecision ?? "unknown"}`);
     }
@@ -194,6 +216,8 @@ export class GitHubCliMergeExecutor {
       pullNumber: input.pullNumber,
       auditor,
       headSha: input.headSha,
+      baseBranch,
+      baseSha: input.baseSha,
       mergeCommit,
       mergedAt,
     };

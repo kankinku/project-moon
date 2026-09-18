@@ -12,6 +12,8 @@ export interface PublishMergeAuditInput {
   pullNumber: number;
   runId: string;
   headSha: string;
+  baseBranch: string;
+  baseSha: string;
   decision: MergeAuditDecision;
   rationale: string;
   unresolvedP1: number;
@@ -23,15 +25,18 @@ export interface PublishMergeAuditResult extends Record<string, unknown> {
   auditor: string;
   author: string;
   headSha: string;
+  baseBranch: string;
+  baseSha: string;
   decision: MergeAuditDecision;
   reviewEvent: "APPROVE" | "REQUEST_CHANGES";
 }
 
-interface PullInfo {
-  headRefOid?: string;
+interface PullApiInfo {
   state?: string;
-  isDraft?: boolean;
-  author?: { login?: string };
+  draft?: boolean;
+  user?: { login?: string };
+  head?: { sha?: string };
+  base?: { ref?: string; sha?: string };
 }
 
 interface UserInfo {
@@ -79,9 +84,11 @@ export class GitHubCliMergeAuditPublisher {
     if (!Number.isInteger(input.pullNumber) || input.pullNumber <= 0) {
       throw new Error("pullNumber must be a positive integer");
     }
-    if (!/^[0-9a-f]{40}$/i.test(input.headSha)) {
-      throw new Error("headSha must be a full 40-character Git commit SHA");
+    if (!/^[0-9a-f]{40}$/i.test(input.headSha) || !/^[0-9a-f]{40}$/i.test(input.baseSha)) {
+      throw new Error("headSha and baseSha must be full 40-character Git commit SHAs");
     }
+    const baseBranch = input.baseBranch.trim();
+    if (!baseBranch) throw new Error("baseBranch is required");
     if (!input.rationale.trim()) throw new Error("rationale is required");
     if (!Number.isInteger(input.unresolvedP1) || input.unresolvedP1 < 0) {
       throw new Error("unresolvedP1 must be a non-negative integer");
@@ -99,25 +106,27 @@ export class GitHubCliMergeAuditPublisher {
       );
     }
 
-    const pull = await this.#json<PullInfo>([
-      "pr",
-      "view",
-      String(input.pullNumber),
-      "--repo",
-      repository,
-      "--json",
-      "headRefOid,state,isDraft,author",
+    const pull = await this.#json<PullApiInfo>([
+      "api",
+      `repos/${repository}/pulls/${input.pullNumber}`,
     ]);
-    const author = pull.author?.login?.trim();
+    const author = pull.user?.login?.trim();
     if (!author) throw new Error("Unable to resolve pull request author");
     if (auditor.toLowerCase() === author.toLowerCase()) {
       throw new Error("Merge auditor account must be different from the pull request author");
     }
-    if (pull.state !== "OPEN") throw new Error(`Pull request is not open: ${pull.state ?? "unknown"}`);
-    if (pull.isDraft === true) throw new Error("Draft pull requests cannot receive final merge approval");
-    if (pull.headRefOid !== input.headSha) {
+    if (pull.state?.toLowerCase() !== "open") {
+      throw new Error(`Pull request is not open: ${pull.state ?? "unknown"}`);
+    }
+    if (pull.draft === true) throw new Error("Draft pull requests cannot receive final merge approval");
+    if (pull.base?.ref !== baseBranch || pull.base?.sha !== input.baseSha) {
       throw new Error(
-        `Merge audit is STALE: GitHub PR head ${pull.headRefOid ?? "unknown"} does not match audited SHA ${input.headSha}`,
+        `Merge audit is STALE: GitHub PR base ${pull.base?.ref ?? "unknown"}@${pull.base?.sha ?? "unknown"} does not match audited base ${baseBranch}@${input.baseSha}`,
+      );
+    }
+    if (pull.head?.sha !== input.headSha) {
+      throw new Error(
+        `Merge audit is STALE: GitHub PR head ${pull.head?.sha ?? "unknown"} does not match audited SHA ${input.headSha}`,
       );
     }
 
@@ -127,6 +136,7 @@ export class GitHubCliMergeAuditPublisher {
       "",
       `Decision: **${input.decision}**`,
       `Auditor: **@${auditor}**`,
+      `Audited base: **${baseBranch}** @ \`${input.baseSha}\``,
       `Audited SHA: \`${input.headSha}\``,
       `Unresolved P1: **${input.unresolvedP1}**`,
       `Audit run: \`${input.runId}\``,
@@ -135,7 +145,7 @@ export class GitHubCliMergeAuditPublisher {
       "",
       input.rationale.trim(),
       "",
-      "이 판단은 위 SHA에만 유효합니다. PR head SHA가 변경되면 재감사가 필요합니다.",
+      "이 판단은 위 PR, base SHA, head SHA에만 유효합니다. 어느 하나라도 변경되면 재감사가 필요합니다.",
     ].join("\n");
 
     const args = ["pr", "review", String(input.pullNumber), "--repo", repository];
@@ -148,6 +158,8 @@ export class GitHubCliMergeAuditPublisher {
       auditor,
       author,
       headSha: input.headSha,
+      baseBranch,
+      baseSha: input.baseSha,
       decision: input.decision,
       reviewEvent,
     };

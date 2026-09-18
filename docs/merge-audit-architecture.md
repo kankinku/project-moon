@@ -1,10 +1,10 @@
-# Independent Merge Audit Architecture
+# Independent Full Merge Audit Architecture
 
 ## Goal
 
-Project Moon exposes **one public MCP connection** while keeping development authority and final merge authority separated internally.
+Project Moon exposes one public MCP connection while keeping implementation authority and final merge authority separated internally. The Merge Auditor is a **final independent code reviewer and quality gate**, not merely a mechanical merge-safety checker.
 
-The public client connects only to the normal Moon endpoint. Merge workflow calls are routed over the private Docker network to an isolated Merge Auditor runtime that uses a different GitHub account.
+The public client connects only to the normal Moon endpoint. The developer runtime proxies an allowlisted merge workflow over the private Docker network to an isolated Merge Auditor runtime using a different GitHub account.
 
 ```text
 ChatGPT / MCP client
@@ -12,41 +12,30 @@ ChatGPT / MCP client
   | OAuth 2.1
   v
 Project Moon / Developer Runtime
-  | 32 development tools
-  | + 6 merge_audit_* gateway tools when configured
+  | implementation + task/review harness
+  | + 6 merge_audit_* gateway tools
   |
   | private Docker network
-  | internal service Bearer only
+  | internal service Bearer
   v
 Merge Auditor Runtime
   | read-only /audit/shared
-  | independent Docker state volume
+  | independent state volume
   | secondary GitHub CLI account
   |
-  +-> SHA-bound audit
+  +-> repository/PR/base/head-pinned full review
+  +-> structured P1-P4 findings + validation evidence
   +-> GitHub APPROVE / REQUEST_CHANGES
-  +-> mechanically gated merge
+  +-> mechanical live GitHub merge gate
 ```
-
-This preserves a simple single-app UX without giving the developer runtime the auditor's GitHub credentials.
 
 ## Trust boundaries
 
 ### Developer runtime
 
-`MCP_RUNTIME_ROLE=developer`
+The developer runtime owns implementation, filesystem/command execution, task validation, ordinary review, Git development, and repair work.
 
-The normal Moon runtime owns implementation:
-
-- command/process tools
-- filesystem tools
-- task harness
-- internal review harness
-- Git development workflow
-
-Without an initialized auditor it exposes the existing 32-tool surface.
-
-When the merge-auditor proxy is enabled, it additionally exposes:
+When the auditor proxy is configured it additionally exposes:
 
 - `merge_audit_start`
 - `merge_audit_context`
@@ -55,137 +44,126 @@ When the merge-auditor proxy is enabled, it additionally exposes:
 - `merge_audit_publish`
 - `merge_audit_merge`
 
-These six tools do not execute the audit locally. They are bounded proxies to the private Merge Auditor runtime.
-
-The developer runtime receives only:
-
-- the internal auditor MCP URL
-- an internal service Bearer credential
-
-It does **not** receive the secondary GitHub account credential.
+These are bounded proxies. The developer runtime receives the private auditor MCP URL and internal service Bearer only; it never receives the secondary GitHub credential.
 
 ### Merge Auditor runtime
 
-`MCP_RUNTIME_ROLE=merge-auditor`
+The private auditor exposes only its authentication bootstrap tools plus the six merge-audit tools. It does not expose arbitrary command execution, filesystem writes, repair worktrees, implementation tasks, or arbitrary GitHub commands.
 
-The private auditor runtime exposes only:
-
-- `merge_auditor_auth_start`
-- `merge_auditor_auth_status`
-- `merge_auditor_auth_cancel`
-- `merge_audit_start`
-- `merge_audit_context`
-- `merge_audit_decide`
-- `merge_audit_status`
-- `merge_audit_publish`
-- `merge_audit_merge`
-
-It does not expose `exec_command`, filesystem write tools, implementation task tools, repair worktrees, or arbitrary GitHub commands.
-
-The host `shared/` workspace is mounted read-only in the auditor as:
+The workspace mapping remains:
 
 ```text
 developer: /shared/<project>
-auditor:   /audit/shared/<project>
+auditor:   /audit/shared/<project>   # read-only
 ```
 
-The public gateway accepts only developer paths under `/shared` and performs this mapping before forwarding the audit request.
+Repository code is **not executed inside the credential-bearing auditor runtime**. Tests/builds belong to developer/CI environments; the auditor reviews their evidence and the final merge executor independently rechecks live GitHub CI.
 
-## Network model
+## Authentication
 
-There is only one public ingress:
+Three domains remain separate:
 
-```text
-https://project-moon.<tailnet>.ts.net/mcp
-  -> Tailscale Funnel HTTPS 443
-  -> 127.0.0.1:2999
-  -> Project Moon Developer Runtime
-```
+1. ChatGPT -> Project Moon: public OAuth 2.1/DCR/PKCE.
+2. Project Moon -> Merge Auditor: host-managed private service Bearer.
+3. Merge Auditor -> GitHub: secondary GitHub CLI account stored only in the auditor state volume.
 
-The auditor is not a second public MCP application. The canonical path is:
+The developer runtime never mounts the auditor GitHub credential store.
 
-```text
-Developer Runtime
-  -> http://merge-auditor:2999/mcp
-  -> private Docker network
-  -> Merge Auditor Runtime
-```
+## Immutable audit target
 
-Host loopback port `3999` may remain available for local diagnostics, but no Tailscale Funnel listener is required for the auditor.
+`merge_audit_start` pins all of the following:
 
-## Authentication model
-
-Three authentication domains are deliberately separate.
-
-### ChatGPT -> Project Moon
-
-The existing public Moon endpoint uses its normal OAuth 2.1 + DCR + PKCE flow. No second ChatGPT connector or second OAuth registration is required.
-
-### Project Moon -> Merge Auditor
-
-The private RPC path uses a dedicated service Bearer secret. On Windows it is stored outside the shared workspace:
-
-```text
-%LOCALAPPDATA%\ProjectMoon\merge-auditor.env
-```
-
-The secret is not committed to Git and is not printed by startup helpers.
-
-### Merge Auditor -> GitHub
-
-The secondary GitHub account is authenticated through the official GitHub CLI. Its configuration is stored only in:
-
-```text
-/var/lib/project-moon/gh
-```
-
-inside the independent `project-moon-auditor-state` Docker volume.
-
-Container restarts and image rebuilds preserve this login while the named volume remains intact. The developer runtime never mounts or reads that credential store.
-
-## Bootstrap
-
-`Initialize-MergeAuditor.ps1` configures the expected secondary GitHub login, creates/migrates the internal service secret, and imports the secondary GitHub CLI credential into the auditor volume. `Start-PublicMcp.ps1` enables the proxy only at runtime when both the expected auditor login and the host-only secret are actually present, so developer-only manual Compose starts remain compatible.
-
-Authentication bootstrap tools remain internal to the auditor runtime. They are not published through the normal Moon tool surface.
-
-After initialization, `Start-PublicMcp.ps1` starts the Developer Runtime and the Merge Auditor together, verifies the secondary GitHub account, and exposes only the normal HTTPS 443 Moon endpoint.
-
-`Start-MergeAuditorMcp.ps1` remains available as an operator recovery/diagnostic helper for the private auditor container. It does not create a public Funnel.
-
-## SHA-bound audit
-
-`merge_audit_start` pins:
-
-- base SHA
-- head SHA
+- GitHub repository `owner/name`
+- pull request number
+- base branch and base SHA
+- head branch and head SHA
 - merge-base SHA
-- changed files
-- diff summary
-- original request / optional internal-review evidence
+- changed files and diff summary
+- original request / acceptance criteria
+- optional internal-review evidence
+- derived change risk and required validation profile
 
-`MERGE_APPROVED` is valid only for the pinned head SHA.
+An audit becomes `STALE` when either the local base branch or local head branch moves.
 
-If the reviewed branch moves, the audit becomes `STALE`. Before publishing a GitHub review and before executing a merge, Moon re-checks the live GitHub PR head.
+Before publishing a review and before merging, Moon also re-checks GitHub and requires the live PR to match the audited repository/PR, base branch, **base SHA**, and head SHA.
 
 ```text
-local reviewed head moved -> reject
-GitHub PR head moved       -> reject
+local base moved        -> reject
+local head moved        -> reject
+GitHub PR base moved    -> reject
+GitHub PR head moved    -> reject
+wrong repository / PR   -> reject
 ```
 
-## Independent review publication
+## Full independent review
+
+`merge_audit_context` returns the pinned diff together with relevant project policy evidence and the risk-derived validation requirement. Repeated context calls may also use `includePaths` and `searchTerms` to read unchanged repository paths and discover callers/consumers/tests via bounded `git show`/literal `git grep` against the exact audited head SHA; this never exposes arbitrary auditor-container filesystem paths.
+
+The auditor must independently review every category:
+
+- requirements
+- correctness
+- code quality
+- tests
+- regression
+- architecture
+- API contracts
+- security
+- performance
+- operations
+- maintainability
+
+Each category receives an evidence-backed verdict: `PASS`, `CONCERN`, or `NOT_APPLICABLE`. `NOT_APPLICABLE` still requires a concrete explanation.
+
+Findings are structured as P1-P4 and record category, concrete evidence, optional file/line, recommendation, and whether the finding is resolved in the pinned SHA. P1 is merge-blocking.
+
+Internal developer review is **evidence only** and is never interpreted as approval.
+
+## Risk-based validation evidence
+
+Risk is derived from the pinned request and changed paths using the repository's pinned Moon harness policy. The corresponding validation profile (for example `fast`, `normal`, or `release`) becomes part of the audit contract.
+
+Validation evidence records:
+
+- source
+- validation profile
+- exact validated head SHA
+- pass/fail
+- traceable reference
+- summary of checks performed
+- backend verification status and verification detail
+
+The auditor does not execute untrusted repository code itself. `source=moon_task` may be consistency-checked against the local task manifest, state, profile, audited HEAD, and workspace fingerprint, but it remains supplemental because `.moon/tasks` is part of the developer-controlled workspace and is intentionally excluded from normal Git changes/fingerprints.
+
+For `source=github_ci`, the auditor resolves the referenced GitHub Actions run through the isolated auditor GitHub account, requires a completed `pull_request` run associated with the exact audited PR, base SHA, head SHA, and branch, loads the run's workflow path, requires that workflow to be byte-identical at pinned base and audited head, maps the pinned validation profile's commands to exact standalone command lines inside explicitly named `run` steps in exactly one workflow job, and verifies the corresponding GitHub job and required steps succeeded. When those commands invoke npm scripts, the referenced `package.json` script definitions must also be identical at pinned base and audited head so an unchanged workflow cannot be paired with a weakened script alias. A PR therefore cannot reuse another PR's run or weaken its own CI and treat that run as trusted evidence. `moon_task`, `external_ci`, and `moon_review` remain supplemental. The later GitHub merge gate independently rechecks live CI/status checks before merge.
+
+## Approval gate
+
+`MERGE_APPROVED` is accepted only when all of these are true:
+
+1. repository/PR/base/head target remains current;
+2. every mandatory review category is present;
+3. no category has `CONCERN`;
+4. no unresolved P1 finding remains;
+5. at least one independently verified `github_ci` evidence item meets the risk-required profile for the exact audited PR/head SHA;
+6. an evidence-based rationale is recorded.
+
+The manifest persists structured findings, coverage, resolved validation evidence, risk, rationale, and approval SHA. Approval remains valid only for the pinned target. Provider-verified full-review manifests use schema version 4; schema versions 1 through 3 are deliberately rejected and must be recreated because their earlier approvals did not satisfy the current independent-provider provenance contract.
+
+## GitHub review publication
 
 Before `merge_audit_publish`, Moon verifies:
 
 1. the local audit is not stale;
-2. the audit has a recorded decision and rationale;
-3. the current GitHub CLI account matches the configured auditor account;
-4. the auditor account is different from the PR author;
-5. the PR is open and not draft;
-6. the live PR head equals the audited SHA;
-7. a `MERGE_APPROVED` decision has zero unresolved P1 findings.
+2. the repository and PR match the target pinned at audit start;
+3. the structured quality gate is satisfied for `MERGE_APPROVED`;
+4. the authenticated GitHub account matches the configured auditor account;
+5. the auditor differs from the PR author;
+6. the PR is open and not draft;
+7. live GitHub base branch and base SHA equal the audited base;
+8. live GitHub head SHA equals the audited head.
 
-The decision maps to GitHub as:
+Decision mapping remains:
 
 ```text
 MERGE_APPROVED   -> APPROVE
@@ -193,80 +171,69 @@ CHANGES_REQUIRED -> REQUEST_CHANGES
 BLOCKED          -> REQUEST_CHANGES
 ```
 
-The review body records the auditor account, audited SHA, run ID, unresolved P1 count, rationale, and a warning that a new head SHA requires a new audit.
-
 ## Mechanical merge gate
 
-`merge_audit_merge` performs no code-quality reasoning. It is a mechanical executor and runs only after the independent audit already reached `MERGE_APPROVED`.
+`merge_audit_merge` performs no new code-quality reasoning. It only executes a merge after the full independent audit has already reached `MERGE_APPROVED`.
 
-Before invoking GitHub merge, it requires all of the following:
+Before merging it rechecks:
 
-1. the audit is not stale;
-2. `approvalSha` equals the current audited head;
-3. the live PR head equals the audited 40-character SHA;
-4. the authenticated GitHub account exactly matches the configured auditor account;
-5. the PR author is different from the auditor;
-6. the PR is open and not draft;
-7. GitHub reports `reviewDecision=APPROVED`;
-8. `latestReviews` contains an `APPROVED` review from the authenticated auditor account itself;
-9. GitHub reports `mergeStateStatus=CLEAN`;
-10. CI/status-check evidence exists and every check is successful, neutral, or skipped.
+1. full audit quality gate and approval SHA;
+2. exact GitHub repository/PR/base branch/base SHA/head SHA;
+3. expected isolated auditor identity;
+4. auditor is not PR author;
+5. PR is open and non-draft;
+6. GitHub `reviewDecision=APPROVED`;
+7. the auditor account itself has a latest `APPROVED` review;
+8. `mergeStateStatus=CLEAN`;
+9. CI/status evidence exists and every check is successful, neutral, or skipped.
 
-Only then does the executor run the fixed command equivalent to:
+It then uses the fixed command equivalent to:
 
 ```text
 gh pr merge <PR> --repo <OWNER/NAME> --merge --match-head-commit <AUDITED_SHA>
 ```
 
-No `--admin` bypass or arbitrary GitHub argument is exposed.
+No `--admin` bypass or arbitrary merge arguments are exposed. After merge, Moon verifies GitHub reports `MERGED`, the auditor as `mergedBy`, a merge commit SHA, and merge timestamp.
 
-Afterward Moon re-reads the PR and requires GitHub to report:
-
-- state `MERGED`
-- `mergedBy` equal to the auditor account
-- a merge commit SHA
-- a merge timestamp
-
-## Repository permissions and branch protection
-
-The secondary auditor account requires enough repository permission for its review to count and for it to merge after branch requirements are satisfied. That GitHub permission is broader than the runtime operations Project Moon exposes, so the runtime is deliberately constrained.
-
-Recommended `main` protection:
+## Recommended branch protection
 
 - require pull request before merging
 - require at least one approving review
-- dismiss stale approvals when new commits are pushed
+- dismiss stale approvals after new commits
 - require Project Moon CI / `validate`
-- require conversation resolution when appropriate
+- require conversation resolution
+- enforce rules for administrators when possible
 - block force pushes
 - block branch deletion
-- prevent administrator bypass when possible
 
-With these rules, the intended path is:
+The intended path is:
 
 ```text
-developer implementation
- -> developer push / PR
- -> CI validate
- -> isolated merge audit
+implementation
+ -> developer validation / internal review
+ -> push + PR + CI
+ -> isolated full Merge Auditor review
+ -> findings / change request if necessary
+ -> new SHA -> fresh audit
  -> auditor APPROVE
- -> mechanical SHA/CI/review gate
+ -> mechanical live GitHub gate
  -> auditor merge
  -> protected main
 ```
 
-## Security invariants
-
-The durable invariants are:
+## Durable security and quality invariants
 
 - one public Moon MCP connection;
-- no public auditor Funnel is required;
 - developer and auditor GitHub identities remain different;
-- auditor GitHub credentials exist only in the auditor state volume;
-- source is read-only inside the auditor;
-- public merge tools are allowlisted proxies, not arbitrary RPC forwarding;
-- developer repository paths outside `/shared` are rejected by the proxy;
-- approval and merge are bound to an exact SHA;
-- the auditor's own GitHub approval is required before merge;
-- failed or incomplete CI blocks merge;
+- auditor credential exists only in the isolated auditor state volume;
+- reviewed source is read-only in the auditor;
+- repository code is not executed in the credential-bearing auditor runtime;
+- public merge tools are allowlisted proxies;
+- paths outside `/shared` are rejected by the proxy;
+- audit is bound to repository, PR, base SHA, and head SHA;
+- base or head movement invalidates approval;
+- full review coverage is mandatory before approval;
+- unresolved P1 findings block approval;
+- risk-required validation evidence must be independently verified from GitHub Actions and bound to the exact audited PR/head plus the unchanged pinned workflow;
+- live GitHub CI and the auditor's own approval are required before merge;
 - no admin bypass is used by the merge executor.

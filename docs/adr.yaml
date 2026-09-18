@@ -57,3 +57,27 @@
     Merge Auditor를 별도 공개 MCP/ChatGPT 앱으로 노출하면 개발과 검수의 권한 분리는 명확하지만 사용자가 두 커넥터를 관리해야 하고 에이전트가 작업 중 도구 표면을 전환해야 한다. 반대로 개발 런타임에 검수 GitHub 자격증명을 직접 넣으면 독립 검수의 보안 경계가 무너진다.
   decision: Project Moon은 기존 HTTPS 443 공개 MCP 하나만 유지하고, 개발 런타임이 allowlist된 merge_audit_* 호출만 private Docker network의 별도 merge-auditor 런타임으로 프록시한다. 검수 런타임은 shared workspace를 read-only로 보고 전용 Docker volume의 별도 GitHub CLI 계정을 사용한다. 최종 merge는 감사 SHA, 검수계정 본인의 APPROVED 리뷰, CI 성공, CLEAN merge state를 기계적으로 재검증한 뒤 --match-head-commit으로만 수행한다.
   consequence: ChatGPT에서는 Moon 하나만 연결하면 개발·독립 검수·merge를 사용할 수 있지만 개발 런타임은 검수계정 GitHub credential을 보유하지 않는다. 별도 8443 공개 Funnel은 필요하지 않으며 내부 service Bearer가 Developer→Auditor RPC 경계를 보호한다.
+
+- id: ADR-007
+  title: Merge approval requires full independent review evidence
+  status: adopted
+  date: 2026-09-18
+  stacks: [merge-audit, review, validation, security]
+  context: |
+    A SHA-safe merge executor prevents stale or unauthorized merges but does not by itself establish that the code is correct, maintainable, requirement-complete, or adequately tested. Running untrusted repository code inside the credential-bearing Merge Auditor would also weaken the GitHub credential boundary.
+  decision: |
+    The Merge Auditor performs a read-only full final review over requirements, correctness, code quality, tests, regression, architecture, API contracts, security, performance, operations, and maintainability. It may inspect unchanged related repository content only through bounded git show/git grep queries pinned to the exact audited head SHA, without arbitrary filesystem-read authority. It persists structured P1-P4 findings, category coverage, risk-derived validation requirements, and validation evidence bound to the exact head SHA. Approval is bound to repository, PR, base SHA, and head SHA; movement of either base or head invalidates it. Repository code is not executed inside the auditor runtime; deterministic execution remains in developer/CI environments and the mechanical GitHub gate rechecks live CI before merge.
+  consequence: |
+    MERGE_APPROVED now represents a full independent quality decision rather than only a safe-to-execute merge decision. The client must provide traceable validation evidence, and a new audit is required whenever the PR base or head changes.
+
+- id: ADR-008
+  title: Merge validation evidence must be backend-verified
+  status: adopted
+  date: 2026-09-18
+  stacks: [merge-audit, validation, task, security]
+  context: |
+    Merge Auditor가 validationEvidence의 source, profile, passed, headSha, reference를 호출자 입력만으로 신뢰하면 에이전트의 실수나 과장된 자기보고가 품질 게이트를 통과할 수 있다. 반대로 credential을 가진 auditor 런타임에서 대상 코드를 직접 실행하면 보안 경계가 약해진다.
+  decision: |
+    MERGE_APPROVED에 필요한 검증 증거는 개발 워크스페이스 밖의 provider를 auditor가 직접 재확인한 경우에만 인정한다. source=github_ci는 검수계정으로 GitHub Actions run을 직접 조회해 exact audited PR/base SHA/head SHA/branch의 pull_request run인지 확인하고, run workflow가 pinned base와 audited head에서 동일한지 비교한 뒤 pinned validation profile의 각 command가 명시적 run step의 독립된 명령 행으로 정확히 포함된 단일 trusted job과 해당 step들의 성공 여부까지 확인한다. npm script를 호출하는 command는 package.json의 해당 script 정의도 base와 head에서 동일해야 한다. source=moon_task는 로컬 task state/profile/HEAD/fingerprint를 일관성 점검할 수 있지만 .moon/tasks 자체가 developer-controlled이므로 승인 증거로는 인정하지 않는다. external_ci와 moon_review도 provider-backed resolver가 추가되기 전까지 보조 증거로만 저장한다. provider-verification 계약 이전의 merge-audit schema v1/v2/v3 run은 재사용하지 않는다.
+  consequence: |
+    단순 문자열 자기보고나 developer-controlled task manifest만으로는 merge 승인을 얻을 수 없다. GitHub CI evidence는 다른 PR의 run이거나 workflow가 PR에서 변경되었거나 required step이 실패하면 신뢰 증거에서 제외된다. 향후 external CI/review provider resolver도 동일한 verified evidence 인터페이스를 확장한다.
