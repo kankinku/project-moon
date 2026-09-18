@@ -6,6 +6,8 @@ function fixture(options: {
   auditor?: string;
   author?: string;
   headSha?: string;
+  baseSha?: string;
+  baseRefName?: string;
   reviewDecision?: string;
   mergeStateStatus?: string;
   auditorApproved?: boolean;
@@ -17,12 +19,22 @@ function fixture(options: {
   const auditor = options.auditor ?? "moon-auditor";
   const author = options.author ?? "developer-main";
   const headSha = options.headSha ?? "a".repeat(40);
+  const baseSha = options.baseSha ?? "c".repeat(40);
   let merged = false;
 
   const command = async (args: string[]) => {
     calls.push(args);
     if (args[0] === "api" && args[1] === "user") {
       return JSON.stringify({ login: auditor });
+    }
+    if (args[0] === "api" && args[1]?.startsWith("repos/")) {
+      return JSON.stringify({
+        state: "open",
+        draft: false,
+        user: { login: author },
+        head: { sha: headSha },
+        base: { ref: options.baseRefName ?? "main", sha: baseSha },
+      });
     }
     if (args[0] === "pr" && args[1] === "view") {
       if (merged) {
@@ -34,10 +46,6 @@ function fixture(options: {
         });
       }
       return JSON.stringify({
-        headRefOid: headSha,
-        state: "OPEN",
-        isDraft: false,
-        author: { login: author },
         reviewDecision: options.reviewDecision ?? "APPROVED",
         mergeStateStatus: options.mergeStateStatus ?? "CLEAN",
         latestReviews: [
@@ -70,22 +78,29 @@ function fixture(options: {
       command,
     }),
     headSha,
+    baseSha,
   };
 }
 
 describe("GitHubCliMergeExecutor", () => {
-  it("merges only the exact independently approved SHA", async () => {
-    const { executor, calls, headSha } = fixture();
+  const baseBranch = "main";
+
+  it("merges only the exact independently approved repository/PR/base/head", async () => {
+    const { executor, calls, headSha, baseSha } = fixture();
 
     const result = await executor.execute({
       repository: "kankinku/project-moon",
       pullNumber: 2,
       headSha,
+      baseBranch,
+      baseSha,
     });
 
     expect(result).toMatchObject({
       auditor: "moon-auditor",
       headSha,
+      baseBranch,
+      baseSha,
       mergeCommit: "b".repeat(40),
     });
     const merge = calls.find((args) => args[0] === "pr" && args[1] === "merge");
@@ -102,50 +117,78 @@ describe("GitHubCliMergeExecutor", () => {
   });
 
   it("rejects a stale GitHub PR head before merge", async () => {
-    const { executor, calls } = fixture({ headSha: "b".repeat(40) });
+    const { executor, calls, baseSha } = fixture({ headSha: "b".repeat(40) });
 
     await expect(
       executor.execute({
         repository: "kankinku/project-moon",
         pullNumber: 2,
         headSha: "a".repeat(40),
+        baseBranch,
+        baseSha,
       }),
     ).rejects.toThrow(/STALE/);
 
     expect(calls.some((args) => args[0] === "pr" && args[1] === "merge")).toBe(false);
   });
 
-  it("requires an APPROVED review from the authenticated auditor account", async () => {
-    const { executor, calls, headSha } = fixture({ auditorApproved: false });
+  it("rejects a PR whose target branch differs from the audited base", async () => {
+    const { executor, calls, headSha, baseSha } = fixture({ baseRefName: "release" });
 
     await expect(
-      executor.execute({ repository: "kankinku/project-moon", pullNumber: 2, headSha }),
+      executor.execute({ repository: "kankinku/project-moon", pullNumber: 2, headSha, baseBranch, baseSha }),
+    ).rejects.toThrow(/base.*does not match/i);
+
+    expect(calls.some((args) => args[0] === "pr" && args[1] === "merge")).toBe(false);
+  });
+
+  it("rejects a PR whose target base SHA moved after the audit", async () => {
+    const { executor, calls, headSha } = fixture({ baseSha: "d".repeat(40) });
+
+    await expect(
+      executor.execute({
+        repository: "kankinku/project-moon",
+        pullNumber: 2,
+        headSha,
+        baseBranch,
+        baseSha: "c".repeat(40),
+      }),
+    ).rejects.toThrow(/base.*does not match/i);
+
+    expect(calls.some((args) => args[0] === "pr" && args[1] === "merge")).toBe(false);
+  });
+
+  it("requires an APPROVED review from the authenticated auditor account", async () => {
+    const { executor, calls, headSha, baseSha } = fixture({ auditorApproved: false });
+
+    await expect(
+      executor.execute({ repository: "kankinku/project-moon", pullNumber: 2, headSha, baseBranch, baseSha }),
     ).rejects.toThrow(/has not published an APPROVED review/);
 
     expect(calls.some((args) => args[0] === "pr" && args[1] === "merge")).toBe(false);
   });
 
   it("rejects incomplete or failed CI evidence", async () => {
-    const { executor, calls, headSha } = fixture({
+    const { executor, calls, headSha, baseSha } = fixture({
       checkStatus: "COMPLETED",
       checkConclusion: "FAILURE",
     });
 
     await expect(
-      executor.execute({ repository: "kankinku/project-moon", pullNumber: 2, headSha }),
+      executor.execute({ repository: "kankinku/project-moon", pullNumber: 2, headSha, baseBranch, baseSha }),
     ).rejects.toThrow(/CI\/status checks are not successful/);
 
     expect(calls.some((args) => args[0] === "pr" && args[1] === "merge")).toBe(false);
   });
 
   it("rejects the wrong authenticated GitHub account", async () => {
-    const { executor, calls, headSha } = fixture({
+    const { executor, calls, headSha, baseSha } = fixture({
       auditor: "developer-main",
       expectedAuditorLogin: "moon-auditor",
     });
 
     await expect(
-      executor.execute({ repository: "kankinku/project-moon", pullNumber: 2, headSha }),
+      executor.execute({ repository: "kankinku/project-moon", pullNumber: 2, headSha, baseBranch, baseSha }),
     ).rejects.toThrow(/does not match expected merge auditor/);
 
     expect(calls.some((args) => args[0] === "pr" && args[1] === "merge")).toBe(false);

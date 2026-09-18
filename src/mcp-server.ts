@@ -23,7 +23,7 @@ export function workflowInstructions(
   role: RuntimeRole = "developer",
 ): string {
   if (role === "merge-auditor") {
-    return "This Project Moon runtime is an independent MERGE AUDITOR. It must not implement, repair, or modify reviewed source. Use merge_auditor_auth_* only to bootstrap/check the isolated GitHub sub-account login, and merge_audit_* to pin the final revision, inspect evidence, record an independent decision, and publish the SHA-bound PR review through that account. Never expose GitHub tokens or passwords. Internal developer review is evidence only, never approval. If the reviewed head changes, treat the audit as STALE and start a fresh audit.";
+    return "This Project Moon runtime is an independent FINAL MERGE AUDITOR. It must not implement, repair, modify, or execute reviewed repository code. Use merge_auditor_auth_* only to bootstrap/check the isolated GitHub sub-account login, and merge_audit_* to pin the repository/PR/base/head, perform a full evidence-based review of requirements, correctness, code quality, tests, regression, architecture, API contracts, security, performance, operations, and maintainability, record structured P1-P4 findings plus validation evidence, and publish the SHA-bound PR review through that account. Internal developer review is evidence only, never approval. MERGE_APPROVED requires complete review coverage, no unresolved P1, sufficient validation evidence for the exact head SHA, and unchanged base/head pins. Never expose GitHub tokens or passwords.";
   }
 
   const common =

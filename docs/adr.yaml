@@ -57,3 +57,15 @@
     Merge Auditor를 별도 공개 MCP/ChatGPT 앱으로 노출하면 개발과 검수의 권한 분리는 명확하지만 사용자가 두 커넥터를 관리해야 하고 에이전트가 작업 중 도구 표면을 전환해야 한다. 반대로 개발 런타임에 검수 GitHub 자격증명을 직접 넣으면 독립 검수의 보안 경계가 무너진다.
   decision: Project Moon은 기존 HTTPS 443 공개 MCP 하나만 유지하고, 개발 런타임이 allowlist된 merge_audit_* 호출만 private Docker network의 별도 merge-auditor 런타임으로 프록시한다. 검수 런타임은 shared workspace를 read-only로 보고 전용 Docker volume의 별도 GitHub CLI 계정을 사용한다. 최종 merge는 감사 SHA, 검수계정 본인의 APPROVED 리뷰, CI 성공, CLEAN merge state를 기계적으로 재검증한 뒤 --match-head-commit으로만 수행한다.
   consequence: ChatGPT에서는 Moon 하나만 연결하면 개발·독립 검수·merge를 사용할 수 있지만 개발 런타임은 검수계정 GitHub credential을 보유하지 않는다. 별도 8443 공개 Funnel은 필요하지 않으며 내부 service Bearer가 Developer→Auditor RPC 경계를 보호한다.
+
+- id: ADR-007
+  title: Merge approval requires full independent review evidence
+  status: adopted
+  date: 2026-09-18
+  stacks: [merge-audit, review, validation, security]
+  context: |
+    A SHA-safe merge executor prevents stale or unauthorized merges but does not by itself establish that the code is correct, maintainable, requirement-complete, or adequately tested. Running untrusted repository code inside the credential-bearing Merge Auditor would also weaken the GitHub credential boundary.
+  decision: |
+    The Merge Auditor performs a read-only full final review over requirements, correctness, code quality, tests, regression, architecture, API contracts, security, performance, operations, and maintainability. It persists structured P1-P4 findings, category coverage, risk-derived validation requirements, and validation evidence bound to the exact head SHA. Approval is bound to repository, PR, base SHA, and head SHA; movement of either base or head invalidates it. Repository code is not executed inside the auditor runtime; deterministic execution remains in developer/CI environments and the mechanical GitHub gate rechecks live CI before merge.
+  consequence: |
+    MERGE_APPROVED now represents a full independent quality decision rather than only a safe-to-execute merge decision. The client must provide traceable validation evidence, and a new audit is required whenever the PR base or head changes.

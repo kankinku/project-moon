@@ -50,3 +50,14 @@ knowledge:
   - id: KNOW-001
     rule: 구현 완료 후 일회성 계획·설계 초안은 영구 지식으로 유지하지 않고, 지속되어야 할 결정만 코드·테스트·규칙·ADR에 흡수한다.
     stacks: [knowledge, docs]
+
+merge_audit:
+  - id: MERGE-001
+    rule: 최종 merge 승인은 repository, PR, base SHA, head SHA에 고정하며 base 또는 head가 변경되면 기존 승인을 무효화한다.
+    stacks: [merge-audit, git]
+  - id: MERGE-002
+    rule: MERGE_APPROVED 전에 요구사항, 정확성, 코드 품질, 테스트, 회귀, 아키텍처, API 계약, 보안, 성능, 운영, 유지보수성 전 범주에 근거 기반 판정을 기록하고 unresolved P1을 0으로 만든다.
+    stacks: [merge-audit, review]
+  - id: MERGE-003
+    rule: 위험도에 필요한 검증 프로필의 성공 증거는 정확한 audited head SHA에 결합되어야 하며, credential을 가진 auditor 런타임에서 untrusted repository code를 직접 실행하지 않는다.
+    stacks: [merge-audit, validation, security]
