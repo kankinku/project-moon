@@ -241,6 +241,29 @@ describe("GitHubActionsValidationResolver", () => {
     ).rejects.toThrow(/npm validation script typecheck changed/);
   });
 
+  it("does not treat validation command substrings as executed commands", async () => {
+    const { resolver, headSha } = fixture();
+    const misleadingWorkflow = workflow.replace("run: npm test", "run: echo npm test");
+    await expect(
+      resolver.resolve({
+        repository: "example/project",
+        reference: "123",
+        expectedPullNumber: 17,
+        expectedBaseSha: "b".repeat(40),
+        expectedHeadSha: headSha,
+        expectedHeadBranch: "feature/audit",
+        expectedPassed: true,
+        profile: "normal",
+        profileCommands: ["npm test"],
+        loadWorkflow: async () => ({
+          baseContent: misleadingWorkflow,
+          headContent: misleadingWorkflow,
+        }),
+        loadPackageJson: async () => ({ baseContent: packageJson, headContent: packageJson }),
+      }),
+    ).rejects.toThrow(/exactly one job mapping every validation command/);
+  });
+
   it("fails closed when profile commands cannot map to one explicitly named workflow job", async () => {
     const { resolver, headSha } = fixture();
     await expect(

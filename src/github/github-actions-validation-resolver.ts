@@ -218,6 +218,11 @@ function workflowJobs(content: string): ParsedWorkflowJob[] {
   });
 }
 
+function runBlockExecutesCommand(run: string, command: string): boolean {
+  const expected = command.trim();
+  return run.replace(/\r/g, "").split("\n").some((line) => line.trim() === expected);
+}
+
 function trustedWorkflowJob(content: string, profileCommands: string[]): TrustedWorkflowJob {
   if (profileCommands.length === 0) {
     throw new Error("Trusted GitHub Actions evidence cannot verify an empty validation profile");
@@ -230,7 +235,7 @@ function trustedWorkflowJob(content: string, profileCommands: string[]): Trusted
 
     for (const command of profileCommands) {
       const matches = job.steps.filter(
-        (step) => step.name && step.run && step.run.includes(command),
+        (step) => step.name && step.run && runBlockExecutesCommand(step.run, command),
       );
       if (matches.length !== 1) {
         valid = false;
