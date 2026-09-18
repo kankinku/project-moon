@@ -80,7 +80,6 @@ export class GitHubCliAuthService {
         "--git-protocol",
         "https",
         "--web",
-        "--skip-ssh-key",
       ],
       {
         env: {

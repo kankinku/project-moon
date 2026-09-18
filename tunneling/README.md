@@ -41,6 +41,22 @@ The helper pins the Tailscale machine name to `project-moon`, obtains its stable
 
 Tailscale Funnel requires MagicDNS, HTTPS support, and Funnel permission on the tailnet. A first-time setup can require browser approval.
 
+## Independent merge auditor public endpoint
+
+After `Initialize-MergeAuditor.ps1` has stored the dedicated secondary GitHub login in `project-moon-auditor-state`, run:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\Start-MergeAuditorMcp.ps1
+```
+
+The auditor uses a separate Funnel listener on HTTPS `8443` and proxies to host loopback `127.0.0.1:3999`. The normal developer endpoint remains on HTTPS `443`. The auditor is protected by its own static Bearer token and host allowlist and exposes only merge-auditor authentication/audit tools. On Windows the Bearer token is stored outside the shared workspace at `%LOCALAPPDATA%\ProjectMoon\merge-auditor.env`; the helper migrates any legacy token from `tunneling/.env.local` and clears the shared copy.
+
+Stop only that endpoint with:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\Stop-MergeAuditorMcp.ps1
+```
+
 ## Generic host deployment
 
 `tunneling/docker-compose.yml` also exposes `127.0.0.1:2999` only. On a Linux host, install Tailscale on the host OS and expose the same loopback port with Funnel; set `MCP_PUBLIC_URL` in `.env` to that host's stable `*.ts.net` URL.

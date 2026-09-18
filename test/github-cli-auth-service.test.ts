@@ -36,6 +36,12 @@ if [[ "\${1:-}" == "api" && "\${2:-}" == "user" ]]; then
   exit 1
 fi
 if [[ "\${1:-}" == "auth" && "\${2:-}" == "login" ]]; then
+  for arg in "$@"; do
+    if [[ "$arg" == "--skip-ssh-key" ]]; then
+      echo "unknown flag: --skip-ssh-key" >&2
+      exit 64
+    fi
+  done
   echo "! First copy your one-time code: TEST-CODE" >&2
   read -r _ || true
   printf '%s\\n' "moon-auditor" > "$state"

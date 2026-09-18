@@ -53,6 +53,7 @@ services:
       MCP_MERGE_AUDIT_ENABLED: "true"
       MCP_MERGE_AUDIT_STATE_DIR: "/var/lib/project-moon/merge-audits"
       MCP_GITHUB_AUDITOR_LOGIN: "${MCP_GITHUB_AUDITOR_LOGIN:-}"
+      MCP_PUBLIC_URL: "${MERGE_AUDITOR_PUBLIC_URL:-}"
       MCP_ALLOWED_HOSTS: "${MERGE_AUDITOR_ALLOWED_HOSTS:-localhost,127.0.0.1}"
       MCP_ALLOW_NO_AUTH: "false"
       MCP_OAUTH_ENABLED: "false"

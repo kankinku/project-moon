@@ -14,10 +14,12 @@ async function git(repo: string, args: string[]) {
 }
 
 async function run(repo: string, env: NodeJS.ProcessEnv = {}) {
+  const childEnv = { ...process.env, ...env };
+  if (!Object.prototype.hasOwnProperty.call(env, "MOON_CONFIG_PATH")) delete childEnv.MOON_CONFIG_PATH;
   try {
     const result = await execFileAsync(process.execPath, [checker, "--repo", repo, "--json"], {
       encoding: "utf8",
-      env: { ...process.env, ...env },
+      env: childEnv,
     });
     return { exitCode: 0, stdout: String(result.stdout) };
   } catch (error) {

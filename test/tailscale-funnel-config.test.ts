@@ -55,6 +55,36 @@ describe("stable Tailscale Funnel deployment", () => {
     expect(stopScript).not.toContain("cloudflared");
   });
 
+  test("merge auditor uses an independent authenticated Funnel listener", () => {
+    const startScript = read("Start-MergeAuditorMcp.ps1");
+    const stopScript = read("Stop-MergeAuditorMcp.ps1");
+    const initializeScript = read("Initialize-MergeAuditor.ps1");
+    const compose = read("tunneling/docker-compose.local.yml");
+    const localEnv = read("tunneling/.env.local.example");
+
+    expect(startScript).toContain("[int]$HttpsPort = 8443");
+    expect(startScript).toContain("funnel --https=$HttpsPort --bg --yes $localPort");
+    expect(startScript).toContain("MERGE_AUDITOR_PUBLIC_URL");
+    expect(startScript).toContain("MERGE_AUDITOR_ALLOWED_HOSTS");
+    expect(startScript).toContain("LocalApplicationData");
+    expect(startScript).toContain("merge-auditor.env");
+    expect(startScript).toContain("Set-DotEnvValue -Path $localEnv -Name 'MERGE_AUDITOR_AUTH_TOKEN' -Value ''");
+    expect(startScript).toContain("Authorization = \"Bearer $auditToken\"");
+    expect(startScript).not.toContain("--https=443");
+    expect(stopScript).toContain("funnel --https=$HttpsPort off");
+    expect(stopScript).toContain("merge-auditor.env");
+    expect(stopScript).not.toContain("funnel reset");
+    expect(compose).toContain('MCP_PUBLIC_URL: "${MERGE_AUDITOR_PUBLIC_URL:-}"');
+    expect(compose).toContain('MCP_ALLOWED_HOSTS: "${MERGE_AUDITOR_ALLOWED_HOSTS:-localhost,127.0.0.1}"');
+    expect(localEnv).toContain("MERGE_AUDITOR_PUBLIC_URL=");
+    expect(localEnv).toContain("MERGE_AUDITOR_ALLOWED_HOSTS=localhost,127.0.0.1");
+    expect(localEnv).not.toContain("MERGE_AUDITOR_AUTH_TOKEN=");
+    expect(initializeScript).toContain("LocalApplicationData");
+    expect(initializeScript).toContain("merge-auditor.env");
+    expect(initializeScript).toContain("Set-DotEnvValue -Path $localEnv -Name 'MERGE_AUDITOR_AUTH_TOKEN' -Value ''");
+    expect(initializeScript).toContain('Authorization = "Bearer $auditToken"');
+  });
+
   test("current deployment docs identify Tailscale as the canonical public transport", () => {
     const localDoc = read("LOCAL_DOCKER_SETUP.md");
     const deployDoc = read("tunneling/README.md");

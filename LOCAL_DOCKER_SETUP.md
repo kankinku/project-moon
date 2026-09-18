@@ -94,6 +94,34 @@ OAUTH_ENABLED=true
 
 A background Funnel persists across device or Tailscale restarts. The ChatGPT MCP registration therefore keeps the same URL as long as this Tailscale machine identity/DNS name is retained.
 
+## Start the independent merge-auditor MCP endpoint
+
+Initialize the dedicated GitHub account and Docker volume first with `Initialize-MergeAuditor.ps1`. Then expose only the auditor runtime on a second Funnel listener:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\Start-MergeAuditorMcp.ps1
+```
+
+The auditor keeps the developer MCP on HTTPS 443 unchanged and uses HTTPS 8443 for its own public ingress:
+
+```text
+ChatGPT merge-auditor connector
+  -> https://project-moon.<tailnet>.ts.net:8443/mcp
+  -> Tailscale Funnel HTTPS 8443
+  -> Windows 127.0.0.1:3999
+  -> project-moon-merge-auditor
+```
+
+`Start-MergeAuditorMcp.ps1` verifies the authenticated secondary GitHub account locally, enables the 8443 Funnel, adds only the stable Tailscale DNS name to `MERGE_AUDITOR_ALLOWED_HOSTS`, recreates the auditor container, and verifies `merge_auditor_auth_status` through the public endpoint. Authentication uses a dedicated static Bearer token stored outside the shared workspace at `%LOCALAPPDATA%\ProjectMoon\merge-auditor.env`; the script automatically migrates an older token from `tunneling/.env.local`, clears the shared copy, and never prints the token.
+
+Stop only the auditor endpoint with:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\Stop-MergeAuditorMcp.ps1
+```
+
+This disables only Funnel HTTPS 8443 and stops `merge-auditor`; it does not alter the normal HTTPS 443 Project Moon endpoint.
+
 ## Verify OAuth and MCP
 
 Retrieve the OAuth approval key only when the authorization page requests it:
