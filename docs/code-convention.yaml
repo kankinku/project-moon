@@ -61,3 +61,6 @@ merge_audit:
   - id: MERGE-003
     rule: 위험도에 필요한 검증 프로필의 성공 증거는 정확한 audited head SHA에 결합되어야 하며, credential을 가진 auditor 런타임에서 untrusted repository code를 직접 실행하지 않는다.
     stacks: [merge-audit, validation, security]
+  - id: MERGE-004
+    rule: 전체 코드 리뷰에 변경 외 문맥이 필요하면 auditor는 audited head SHA에 고정된 repository-relative git show/git grep 조회만 사용하고 arbitrary filesystem read 권한을 얻지 않는다.
+    stacks: [merge-audit, review, security]

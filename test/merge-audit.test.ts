@@ -99,6 +99,35 @@ describe("independent full merge audit", () => {
     });
     expect(String(context.diff)).toContain("feature.txt");
 
+    const inspection = await service.context({
+      repoPath: repo,
+      runId: String(started.runId),
+      includePaths: ["base.txt"],
+      searchTerms: ["feature"],
+    });
+    expect(inspection).toMatchObject({
+      inspectionSourceSha: featureSha,
+      inspectedFiles: [
+        {
+          path: "base.txt",
+          exists: true,
+          content: "base",
+          truncated: false,
+        },
+      ],
+    });
+    expect(String(
+      (inspection.searchResults as Array<{ matches: string }>)[0]?.matches ?? "",
+    )).toContain("feature.txt:1:feature");
+
+    await expect(
+      service.context({
+        repoPath: repo,
+        runId: String(started.runId),
+        includePaths: ["../outside-secret"],
+      }),
+    ).rejects.toThrow(/repository-relative Git paths/);
+
     const decision = await service.decide({
       repoPath: repo,
       runId: String(started.runId),

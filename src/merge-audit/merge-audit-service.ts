@@ -19,6 +19,9 @@ import type {
 const execFileAsync = promisify(execFile);
 const MAX_DIFF_CHARS = 240_000;
 const MAX_POLICY_CHARS = 120_000;
+const MAX_INSPECTION_CHARS = 240_000;
+const MAX_INSPECTION_PATHS = 12;
+const MAX_SEARCH_TERMS = 8;
 
 export const REQUIRED_REVIEW_CATEGORIES: readonly MergeAuditCategory[] = [
   "requirements",
@@ -47,6 +50,28 @@ function parseRepository(value: string): string {
   const normalized = value.trim();
   if (!/^[^/\s]+\/[^/\s]+$/.test(normalized)) {
     throw new Error("repository must use owner/name format");
+  }
+  return normalized;
+}
+
+function parseInspectionPath(value: string): string {
+  const normalized = value.trim();
+  if (
+    !normalized ||
+    normalized.startsWith("/") ||
+    normalized.includes("\\") ||
+    normalized.includes("\0") ||
+    normalized.split("/").some((segment) => segment === "..")
+  ) {
+    throw new Error(`Inspection paths must be repository-relative Git paths: ${value}`);
+  }
+  return normalized.replace(/^\.\//, "");
+}
+
+function parseSearchTerm(value: string): string {
+  const normalized = value.trim();
+  if (!normalized || normalized.length > 200 || /[\0\r\n]/.test(normalized)) {
+    throw new Error("Search terms must be non-empty single-line strings up to 200 characters");
   }
   return normalized;
 }
@@ -136,6 +161,16 @@ export class MergeAuditService {
       maxBuffer: 8 * 1024 * 1024,
     });
     return String(result.stdout).trimEnd();
+  }
+
+  async #gitOptional(repoPath: string, args: string[]): Promise<string> {
+    try {
+      return await this.#git(repoPath, args);
+    } catch (error) {
+      const value = error as NodeJS.ErrnoException;
+      if (String(value.code ?? "") === "1") return "";
+      throw error;
+    }
   }
 
   async #repoRoot(repoPath: string): Promise<string> {
@@ -309,7 +344,12 @@ export class MergeAuditService {
     };
   }
 
-  async context(input: { repoPath: string; runId: string }): Promise<Record<string, unknown>> {
+  async context(input: {
+    repoPath: string;
+    runId: string;
+    includePaths?: string[];
+    searchTerms?: string[];
+  }): Promise<Record<string, unknown>> {
     const repoRoot = await this.#repoRoot(input.repoPath);
     const manifest = await this.#readManifest(repoRoot, input.runId);
     const pins = await this.#currentPins(repoRoot, manifest);
@@ -327,6 +367,50 @@ export class MergeAuditService {
       const value = bounded(content, MAX_POLICY_CHARS);
       return { exists: true, ...value };
     };
+
+    const includePaths = (input.includePaths ?? []).map(parseInspectionPath);
+    const searchTerms = (input.searchTerms ?? []).map(parseSearchTerm);
+    if (includePaths.length > MAX_INSPECTION_PATHS) {
+      throw new Error(`includePaths supports at most ${MAX_INSPECTION_PATHS} paths per call`);
+    }
+    if (searchTerms.length > MAX_SEARCH_TERMS) {
+      throw new Error(`searchTerms supports at most ${MAX_SEARCH_TERMS} terms per call`);
+    }
+
+    let inspectionBudget = MAX_INSPECTION_CHARS;
+    const inspectedFiles: Array<Record<string, unknown>> = [];
+    for (const relative of includePaths) {
+      const content = await this.#gitFileAtRef(repoRoot, manifest.headSha, relative);
+      if (content === undefined) {
+        inspectedFiles.push({ path: relative, exists: false, content: "", truncated: false });
+        continue;
+      }
+      const limit = Math.max(1, Math.min(64_000, inspectionBudget));
+      const value = bounded(content, limit);
+      inspectionBudget = Math.max(0, inspectionBudget - value.content.length);
+      inspectedFiles.push({ path: relative, exists: true, ...value });
+      if (inspectionBudget === 0) break;
+    }
+
+    const searchResults: Array<Record<string, unknown>> = [];
+    for (const term of searchTerms) {
+      if (inspectionBudget === 0) break;
+      const raw = await this.#gitOptional(repoRoot, [
+        "grep",
+        "-n",
+        "-I",
+        "-F",
+        "--full-name",
+        "-e",
+        term,
+        manifest.headSha,
+        "--",
+      ]);
+      const limit = Math.max(1, Math.min(32_000, inspectionBudget));
+      const value = bounded(raw, limit);
+      inspectionBudget = Math.max(0, inspectionBudget - value.content.length);
+      searchResults.push({ term, matches: value.content, truncated: value.truncated });
+    }
 
     return {
       runId: manifest.runId,
@@ -347,6 +431,10 @@ export class MergeAuditService {
       diff: diffValue.content,
       diffTruncated: diffValue.truncated,
       requiredReviewCategories: REQUIRED_REVIEW_CATEGORIES,
+      inspectionSourceSha: manifest.headSha,
+      inspectedFiles,
+      searchResults,
+      inspectionTruncated: inspectionBudget === 0,
       policySourceSha: manifest.baseSha,
       policies: {
         agents: await readPolicy("AGENTS.md"),
@@ -355,7 +443,7 @@ export class MergeAuditService {
         moonConfig: await readPolicy("moon.config.json"),
       },
       auditorContract:
-        "Perform a full independent final review of the pinned change. Verify requirements, correctness, code quality, tests, regression risk, architecture, API contracts, security, performance, operations, and maintainability. Internal review is evidence only. Record concrete P1-P4 findings and category-by-category evidence. Do not modify or execute repository code in this credential-bearing auditor runtime. MERGE_APPROVED requires complete review coverage, zero unresolved P1 findings, sufficient passing validation evidence bound to the pinned head SHA, and unchanged base/head pins.",
+        "Perform a full independent final review of the pinned change. Verify requirements, correctness, code quality, tests, regression risk, architecture, API contracts, security, performance, operations, and maintainability. Internal review is evidence only. Use includePaths and searchTerms on repeated merge_audit_context calls to inspect unchanged related code, callers, consumers, and tests at the exact audited head SHA when material to a verdict. Record concrete P1-P4 findings and category-by-category evidence. Do not modify or execute repository code in this credential-bearing auditor runtime. MERGE_APPROVED requires complete review coverage, zero unresolved P1 findings, sufficient passing validation evidence bound to the pinned head SHA, and unchanged base/head pins.",
     };
   }
 

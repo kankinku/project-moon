@@ -128,11 +128,21 @@ export function registerMergeAuditTools(
       title: "Get full independent merge-review context",
       description:
         "Return pinned diff, policy evidence, risk classification, mandatory review categories, validation requirement, target binding, and base/head staleness without modifying source.",
-      inputSchema: { repoPath, runId },
+      inputSchema: {
+        repoPath,
+        runId,
+        includePaths: z.array(z.string().min(1)).max(12).optional().describe(
+          "Repository-relative paths to read from the exact audited head SHA for surrounding-code review.",
+        ),
+        searchTerms: z.array(z.string().min(1).max(200)).max(8).optional().describe(
+          "Literal Git grep terms used to discover callers, consumers, related tests, or architecture references at the exact audited head SHA.",
+        ),
+      },
       annotations: TOOL_ANNOTATIONS.readOnlyClosed,
       _meta: authMetadata,
     },
-    async ({ repoPath, runId }) => runTool(() => audits.context({ repoPath, runId })),
+    async ({ repoPath, runId, includePaths, searchTerms }) =>
+      runTool(() => audits.context({ repoPath, runId, includePaths, searchTerms })),
   );
 
   server.registerTool(

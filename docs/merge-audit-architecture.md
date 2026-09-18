@@ -97,7 +97,7 @@ wrong repository / PR   -> reject
 
 ## Full independent review
 
-`merge_audit_context` returns the pinned diff together with relevant project policy evidence and the risk-derived validation requirement.
+`merge_audit_context` returns the pinned diff together with relevant project policy evidence and the risk-derived validation requirement. Repeated context calls may also use `includePaths` and `searchTerms` to read unchanged repository paths and discover callers/consumers/tests via bounded `git show`/literal `git grep` against the exact audited head SHA; this never exposes arbitrary auditor-container filesystem paths.
 
 The auditor must independently review every category:
 
