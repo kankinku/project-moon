@@ -23,6 +23,9 @@ services:
       MCP_ALLOW_NO_AUTH: "${MCP_ALLOW_NO_AUTH:-true}"
       MCP_OAUTH_ENABLED: "${MCP_OAUTH_ENABLED:-false}"
       MCP_AUTH_TOKEN: ""
+      MCP_MERGE_AUDITOR_PROXY_ENABLED: "${MERGE_AUDITOR_PROXY_ENABLED:-false}"
+      MCP_MERGE_AUDITOR_INTERNAL_URL: "http://merge-auditor:2999/mcp"
+      MCP_MERGE_AUDITOR_INTERNAL_TOKEN: "${MERGE_AUDITOR_AUTH_TOKEN:-}"
       MCP_DEFAULT_CWD: "/shared"
     volumes:
       - type: bind
@@ -53,17 +56,16 @@ services:
       MCP_MERGE_AUDIT_ENABLED: "true"
       MCP_MERGE_AUDIT_STATE_DIR: "/var/lib/project-moon/merge-audits"
       MCP_GITHUB_AUDITOR_LOGIN: "${MCP_GITHUB_AUDITOR_LOGIN:-}"
-      MCP_PUBLIC_URL: "${MERGE_AUDITOR_PUBLIC_URL:-}"
-      MCP_ALLOWED_HOSTS: "${MERGE_AUDITOR_ALLOWED_HOSTS:-localhost,127.0.0.1}"
+      MCP_ALLOWED_HOSTS: "localhost,127.0.0.1,merge-auditor"
       MCP_ALLOW_NO_AUTH: "false"
       MCP_OAUTH_ENABLED: "false"
       MCP_AUTH_TOKEN: "${MERGE_AUDITOR_AUTH_TOKEN:-}"
-      MCP_DEFAULT_CWD: "/audit/repo"
+      MCP_DEFAULT_CWD: "/audit/shared"
       GH_CONFIG_DIR: "/var/lib/project-moon/gh"
     volumes:
       - type: bind
-        source: "${MERGE_AUDITOR_REPO_PATH:-..}"
-        target: /audit/repo
+        source: ../shared
+        target: /audit/shared
         read_only: true
       - type: volume
         source: project-moon-auditor-state

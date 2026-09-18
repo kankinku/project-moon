@@ -45,6 +45,29 @@ describe("tool authentication metadata", () => {
     }
   });
 
+  it("advertises the same public OAuth scope on proxied merge tools", async () => {
+    const tools = await listTools({
+      MCP_OAUTH_ENABLED: "true",
+      MCP_OAUTH_APPROVAL_KEY: "approval-key",
+      MCP_PUBLIC_URL: "https://mcp.example.com",
+      MCP_OAUTH_ISSUER: "https://mcp.example.com",
+      MCP_OAUTH_RESOURCE: "https://mcp.example.com/mcp",
+      MCP_MERGE_AUDITOR_PROXY_ENABLED: "true",
+      MCP_MERGE_AUDITOR_INTERNAL_URL: "http://merge-auditor:2999/mcp",
+      MCP_MERGE_AUDITOR_INTERNAL_TOKEN: "internal-secret",
+    });
+
+    expect(tools).toHaveLength(38);
+    const names = tools.map((tool) => tool.name);
+    expect(names).toContain("merge_audit_merge");
+    expect(names).not.toContain("merge_auditor_auth_start");
+    for (const tool of tools) {
+      expect(tool._meta, tool.name).toEqual({
+        securitySchemes: [{ type: "oauth2", scopes: ["mcp:tools"] }],
+      });
+    }
+  });
+
   it("does not infer noauth from the internal authentication bypass", async () => {
     const tools = await listTools({ MCP_ALLOW_NO_AUTH: "true" });
 

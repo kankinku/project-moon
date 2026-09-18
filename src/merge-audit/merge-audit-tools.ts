@@ -3,6 +3,7 @@ import * as z from "zod/v4";
 
 import type { AppConfig } from "../config.js";
 import type { GitHubCliMergeAuditPublisher } from "../github/github-cli-merge-audit-publisher.js";
+import type { GitHubCliMergeExecutor } from "../github/github-cli-merge-executor.js";
 import { runTool } from "../tool-result.js";
 import { TOOL_ANNOTATIONS, toolAuthMetadata } from "../tool-metadata.js";
 import { MergeAuditService } from "./merge-audit-service.js";
@@ -20,6 +21,7 @@ export function registerMergeAuditTools(
   config: AppConfig,
   audits: MergeAuditService,
   publisher?: GitHubCliMergeAuditPublisher,
+  executor?: GitHubCliMergeExecutor,
 ): void {
   const authMetadata = toolAuthMetadata(config);
   const repoPath = z.string().min(1).describe("Path inside the Git repository to audit.");
@@ -134,6 +136,39 @@ export function registerMergeAuditTools(
             rationale,
             unresolvedP1,
           });
+        }),
+    );
+  }
+
+  if (executor) {
+    server.registerTool(
+      "merge_audit_merge",
+      {
+        title: "Merge independently approved pull request",
+        description:
+          "Merge the pull request through the isolated auditor account only when the SHA-bound audit is still current and GitHub confirms the auditor approval, CI checks, and merge gate are satisfied.",
+        inputSchema: {
+          repoPath,
+          runId,
+          repository: z.string().regex(/^[^/\s]+\/[^/\s]+$/).describe("GitHub repository in owner/name form."),
+          pullNumber: z.number().int().positive().describe("Pull request number to merge."),
+        },
+        annotations: TOOL_ANNOTATIONS.destructiveNonIdempotentOpen,
+        _meta: authMetadata,
+      },
+      async ({ repoPath, runId, repository, pullNumber }) =>
+        runTool(async () => {
+          const status = await audits.status({ repoPath, runId });
+          if (status.stale === true || status.readyToMerge !== true) {
+            throw new Error("Merge audit is not ready for merge or has become STALE");
+          }
+          const decision = parseDecision(status.decision);
+          if (decision !== "MERGE_APPROVED") {
+            throw new Error(`Merge audit decision is not MERGE_APPROVED: ${decision}`);
+          }
+          const headSha = typeof status.headSha === "string" ? status.headSha : "";
+          if (!/^[0-9a-f]{40}$/i.test(headSha)) throw new Error("Merge audit pinned head SHA is invalid");
+          return executor.execute({ repository, pullNumber, headSha });
         }),
     );
   }

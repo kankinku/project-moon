@@ -13,36 +13,42 @@ Project Moon은 “AI가 명령을 제안하고 사람이 복사해서 실행하
 
 | 구성 | 역할 | 기본 도구/권한 |
 |---|---|---|
-| **Developer Runtime** | 구현, 파일 수정, 명령 실행, 테스트, Git 작업, 내부 리뷰 | MCP 도구 32개 |
-| **Merge Auditor Runtime** | 고정된 PR diff 검수, 독립 승인/반려, SHA 변경 감지 | 제한된 MCP 도구 8개 |
-| **Public Transport** | 외부 MCP 연결 | HTTPS + Tailscale Funnel |
-| **Authentication** | MCP 접근 제어 | OAuth 2.1 + DCR + PKCE 또는 Static Bearer |
-| **Merge Gate** | `main` 보호 | PR + CI `validate` + 독립 승인 |
+| **Developer Runtime** | 구현, 파일 수정, 명령 실행, 테스트, Git 작업, 내부 리뷰 | 기본 MCP 도구 32개 |
+| **Merge Gateway** | 동일한 공개 Moon에서 독립 검수·승인·merge 호출 | auditor 초기화 시 +6개 |
+| **Merge Auditor Runtime** | 고정된 PR diff 검수, 독립 승인/반려, SHA·CI gate, merge | 내부 전용 9개 |
+| **Public Transport** | 외부 MCP 연결 | HTTPS 443 + Tailscale Funnel 1개 |
+| **Authentication** | ChatGPT→Moon / Moon→Auditor / Auditor→GitHub 분리 | OAuth / 내부 Bearer / GitHub CLI |
+| **Merge Gate** | `main` 보호 | PR + CI `validate` + 검수계정 승인 + SHA 일치 |
 
 ```text
-                         ┌─────────────────────────┐
-ChatGPT / Codex ────────►│   Developer Runtime     │
-                         │ command / file / Git     │
-                         │ task / internal review   │
-                         └────────────┬────────────┘
-                                      │
-                                      │ commit / push / PR
-                                      ▼
-                              GitHub Pull Request
-                                      │
-                         ┌────────────┴────────────┐
-                         │                         │
-                         ▼                         ▼
-                  Project Moon CI          Merge Auditor Runtime
-                     validate              read-only repository
-                         │                 pinned SHA / diff audit
-                         │                         │
-                         └────────────┬────────────┘
-                                      ▼
-                              protected `main`
+ChatGPT / Codex
+      │
+      │ OAuth 2.1 — 공개 MCP는 하나
+      ▼
+┌──────────────────────────────┐
+│ Project Moon / Developer     │
+│ 개발 32도구 + merge proxy 6 │
+└───────────┬──────────────────┘
+            │ private Docker network
+            │ service Bearer only
+            ▼
+┌──────────────────────────────┐
+│ Merge Auditor Runtime        │
+│ read-only /audit/shared      │
+│ GitHub: secondary account    │
+└───────────┬──────────────────┘
+            │ SHA-bound review / merge
+            ▼
+      GitHub Pull Request
+       │              │
+       ├─ CI validate │
+       └─ APPROVED ───┘
+            │
+            ▼
+      protected `main`
 ```
 
-Merge Auditor는 개발 런타임과 **별도 GitHub 계정·별도 Docker 상태 볼륨·별도 MCP 도구 표면**을 사용합니다. 감사 대상 저장소는 read-only로 마운트되고, 검수 계정이 PR 작성자와 동일하면 승인을 거부합니다. 자세한 설계는 [`docs/merge-audit-architecture.md`](docs/merge-audit-architecture.md)를 참고하세요.
+외부에서는 **기존 Moon 하나만 연결**합니다. `merge_audit_*` 호출만 private Docker network를 통해 별도 Merge Auditor 런타임으로 전달됩니다. 검수계정의 GitHub 자격증명은 auditor 전용 Docker volume에만 남고 Developer Runtime에는 전달되지 않습니다. 감사 대상 `/shared/...`는 auditor에서 `/audit/shared/...`로 read-only 매핑되며, PR 작성자와 검수계정이 같거나 감사 SHA·CI·승인 상태가 어긋나면 승인/merge가 거부됩니다. 자세한 설계는 [`docs/merge-audit-architecture.md`](docs/merge-audit-architecture.md)를 참고하세요.
 
 ### 빠른 링크
 
@@ -309,7 +315,7 @@ exec_command
 
 # AI 작업 모드: AUTO / DIRECT / HARNESS
 
-현재 Moon은 원본의 단순성을 버리지 않고 작업 방식으로 보존합니다. 세 모드 모두 동일한 32개 도구를 사용하며, 코드 경로를 이중으로 유지하지 않습니다. 차이는 **에이전트가 task lifecycle을 언제 사용하는가**입니다.
+현재 Moon은 원본의 단순성을 버리지 않고 작업 방식으로 보존합니다. AUTO·DIRECT·HARNESS는 동일한 **32개 개발 도구**를 사용하며, 코드 경로를 이중으로 유지하지 않습니다. Merge Auditor를 초기화한 설치에서는 작업 모드와 무관하게 **6개의 `merge_audit_*` gateway 도구가 추가**되어 총 38개가 노출됩니다. 차이는 **에이전트가 task lifecycle을 언제 사용하는가**입니다.
 
 | 모드 | 용도 | 기본 동작 |
 |---|---|---|
@@ -838,7 +844,8 @@ npm run build
 - 프로세스 lifecycle
 - 파일 읽기·쓰기·패치
 - UTF-8 / Base64 경계
-- 모든 32개 도구 계약
+- 기본 32개 개발 도구 계약과 optional 6개 merge gateway 도구 계약
+- Merge Auditor runtime 격리와 SHA/CI/승인 기반 merge gate
 - AI 작업 하니스 lifecycle과 위험도 상승
 - 검증 정책 고정 및 self-bypass 방지
 - 검증 후 변경에 대한 `STALE` 감지

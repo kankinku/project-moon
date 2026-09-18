@@ -34,6 +34,10 @@ export interface AppConfig {
   mergeAuditEnabled: boolean;
   mergeAuditStateDir: string | undefined;
   githubAuditorLogin: string | undefined;
+  mergeAuditorProxyEnabled: boolean;
+  mergeAuditorInternalUrl: string | undefined;
+  mergeAuditorInternalToken: string | undefined;
+  mergeAuditorRequestTimeoutMs: number;
 }
 
 function parseBoolean(value: string | undefined, fallback: boolean): boolean {
@@ -100,6 +104,23 @@ function normalizeOAuthUrl(value: string | undefined, name: string): string {
   return url.href;
 }
 
+function normalizeInternalUrl(value: string | undefined, name: string): string | undefined {
+  const normalized = value?.trim();
+  if (!normalized) return undefined;
+  let url: URL;
+  try {
+    url = new URL(normalized);
+  } catch {
+    throw new Error(`${name} must be an absolute URL`);
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new Error(`${name} must use http or https`);
+  }
+  if (url.username || url.password) throw new Error(`${name} must not contain user credentials`);
+  if (url.search || url.hash) throw new Error(`${name} must not contain a query string or fragment`);
+  return url.href;
+}
+
 export function loadConfig(
   env: NodeJS.ProcessEnv = process.env,
   processCwd = process.cwd(),
@@ -137,6 +158,17 @@ export function loadConfig(
       )
     : undefined;
   const mergeAuditStateDir = env.MCP_MERGE_AUDIT_STATE_DIR?.trim();
+  const mergeAuditorProxyEnabled = parseBoolean(env.MCP_MERGE_AUDITOR_PROXY_ENABLED, false);
+  const mergeAuditorInternalUrl = normalizeInternalUrl(
+    env.MCP_MERGE_AUDITOR_INTERNAL_URL,
+    "MCP_MERGE_AUDITOR_INTERNAL_URL",
+  );
+  const mergeAuditorInternalToken = env.MCP_MERGE_AUDITOR_INTERNAL_TOKEN?.trim() || undefined;
+  if (mergeAuditorProxyEnabled && (!mergeAuditorInternalUrl || !mergeAuditorInternalToken)) {
+    throw new Error(
+      "MCP_MERGE_AUDITOR_INTERNAL_URL and MCP_MERGE_AUDITOR_INTERNAL_TOKEN are required when MCP_MERGE_AUDITOR_PROXY_ENABLED=true",
+    );
+  }
 
   return {
     host: env.MCP_HOST?.trim() || "0.0.0.0",
@@ -211,5 +243,15 @@ export function loadConfig(
     mergeAuditEnabled: parseBoolean(env.MCP_MERGE_AUDIT_ENABLED, false),
     mergeAuditStateDir: mergeAuditStateDir ? path.resolve(mergeAuditStateDir) : undefined,
     githubAuditorLogin: env.MCP_GITHUB_AUDITOR_LOGIN?.trim() || undefined,
+    mergeAuditorProxyEnabled,
+    mergeAuditorInternalUrl,
+    mergeAuditorInternalToken,
+    mergeAuditorRequestTimeoutMs: parseInteger(
+      env.MCP_MERGE_AUDITOR_REQUEST_TIMEOUT_MS,
+      60_000,
+      "MCP_MERGE_AUDITOR_REQUEST_TIMEOUT_MS",
+      1_000,
+      300_000,
+    ),
   };
 }
