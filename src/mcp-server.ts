@@ -7,6 +7,9 @@ import { registerFileTools } from "./file-tools.js";
 import { GitHubCliAuthService } from "./github/github-cli-auth-service.js";
 import { registerGitHubCliAuthTools } from "./github/github-cli-auth-tools.js";
 import { GitHubCliMergeAuditPublisher } from "./github/github-cli-merge-audit-publisher.js";
+import { GitHubCliMergeExecutor } from "./github/github-cli-merge-executor.js";
+import { MergeAuditProxyClient } from "./merge-audit/merge-audit-proxy-client.js";
+import { registerMergeAuditProxyTools } from "./merge-audit/merge-audit-proxy-tools.js";
 import { MergeAuditService } from "./merge-audit/merge-audit-service.js";
 import { registerMergeAuditTools } from "./merge-audit/merge-audit-tools.js";
 import { ProcessManager } from "./process-manager.js";
@@ -24,7 +27,7 @@ export function workflowInstructions(
   }
 
   const common =
-    "This server is an unrestricted remote development environment. Tools operate directly on the host with the MCP service process's full OS permissions. DIRECT and HARNESS are workflow policies, not security boundaries. Explicit user instructions to use DIRECT or HARNESS for the current request override the server default when compatible with the requested operation. Use review_* for independent reproducible code review pinned to Git commits. Final merge approval belongs to a separate merge-auditor runtime and is intentionally unavailable from this developer runtime. Poll long-running commands with read_process or write_stdin.";
+    "This server is an unrestricted remote development environment. Tools operate directly on the host with the MCP service process's full OS permissions. DIRECT and HARNESS are workflow policies, not security boundaries. Explicit user instructions to use DIRECT or HARNESS for the current request override the server default when compatible with the requested operation. Use review_* for independent reproducible code review pinned to Git commits. Final merge approval belongs to a separate merge-auditor runtime. When merge_audit_* tools are exposed here, they are private-network proxies to that isolated runtime rather than local developer authority. Poll long-running commands with read_process or write_stdin.";
 
   if (mode === "direct") {
     return `${common} Default workflow: DIRECT. Prefer exec_command/run_script and file tools immediately, without creating task_* lifecycle state, for diagnostics, one-shot operations, and clearly scoped changes. Run relevant deterministic checks directly when code changes. Escalate to task_* only when the user asks for HARNESS or the work becomes materially multi-step, architectural, high-risk, or needs reproducible validation evidence.`;
@@ -43,6 +46,8 @@ export interface McpServices {
   mergeAuditService: MergeAuditService;
   githubCliAuthService: GitHubCliAuthService;
   githubMergeAuditPublisher: GitHubCliMergeAuditPublisher;
+  githubMergeExecutor: GitHubCliMergeExecutor;
+  mergeAuditProxyClient: MergeAuditProxyClient | undefined;
 }
 
 export function createServices(config: AppConfig): McpServices {
@@ -68,6 +73,17 @@ export function createServices(config: AppConfig): McpServices {
     githubMergeAuditPublisher: new GitHubCliMergeAuditPublisher({
       expectedAuditorLogin: config.githubAuditorLogin,
     }),
+    githubMergeExecutor: new GitHubCliMergeExecutor({
+      expectedAuditorLogin: config.githubAuditorLogin,
+    }),
+    mergeAuditProxyClient:
+      config.mergeAuditorProxyEnabled && config.mergeAuditorInternalUrl && config.mergeAuditorInternalToken
+        ? new MergeAuditProxyClient({
+            url: config.mergeAuditorInternalUrl,
+            token: config.mergeAuditorInternalToken,
+            timeoutMs: config.mergeAuditorRequestTimeoutMs,
+          })
+        : undefined,
   };
 }
 
@@ -93,6 +109,7 @@ export function createMcpServer(config: AppConfig, services: McpServices): McpSe
       config,
       services.mergeAuditService,
       services.githubMergeAuditPublisher,
+      services.githubMergeExecutor,
     );
     return server;
   }
@@ -101,5 +118,8 @@ export function createMcpServer(config: AppConfig, services: McpServices): McpSe
   registerFileTools(server, config, services.fileService);
   registerTaskTools(server, config, services.taskService);
   registerReviewTools(server, config, services.reviewService);
+  if (services.mergeAuditProxyClient) {
+    registerMergeAuditProxyTools(server, config, services.mergeAuditProxyClient);
+  }
   return server;
 }

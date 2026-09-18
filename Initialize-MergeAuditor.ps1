@@ -224,5 +224,7 @@ if ($rpcJson -notmatch 'AUTHENTICATED' -or $rpcJson -notmatch [regex]::Escape($E
 
 Write-Output "MERGE_AUDITOR_ACCOUNT=$volumeLogin"
 Write-Output "MERGE_AUDITOR_PORT=$port"
+Write-Output 'MERGE_AUDITOR_PROXY_READY=true'
+Write-Output 'MERGE_AUDITOR_TRANSPORT=private-docker-network'
 Write-Output 'MERGE_AUDITOR_AUTH_STATUS=AUTHENTICATED'
 Write-Output 'MERGE_AUDITOR_RUNTIME=READY'

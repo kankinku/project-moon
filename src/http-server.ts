@@ -151,6 +151,7 @@ export async function startHttpServer(
       unrestrictedHostAccess: true,
       workflowMode: config.workflowMode,
       oauthEnabled: config.oauthEnabled,
+      mergeAuditorProxyEnabled: config.mergeAuditorProxyEnabled,
     });
   });
 

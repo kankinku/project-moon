@@ -11,10 +11,40 @@ $composeFile = Join-Path $projectRoot 'tunneling\docker-compose.local.yml'
 $gpuComposeFile = Join-Path $projectRoot 'tunneling\docker-compose.gpu.yml'
 $localEnv = Join-Path $projectRoot 'tunneling\.env.local'
 $publicEnv = Join-Path $projectRoot 'tunneling\.env.public'
+$localAppData = [Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)
+$auditorSecretEnv = if ([string]::IsNullOrWhiteSpace($localAppData)) {
+    $null
+} else {
+    Join-Path (Join-Path $localAppData 'ProjectMoon') 'merge-auditor.env'
+}
+
+function Get-DotEnvValue {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string]$Name
+    )
+
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $null }
+    foreach ($line in [System.IO.File]::ReadAllLines($Path)) {
+        if ($line.StartsWith("$Name=")) { return $line.Substring($Name.Length + 1) }
+    }
+    return $null
+}
 
 if (-not (Test-Path -LiteralPath $localEnv)) {
     throw "Missing $localEnv. Copy tunneling/.env.local.example first."
 }
+
+$expectedAuditorLogin = Get-DotEnvValue -Path $localEnv -Name 'MCP_GITHUB_AUDITOR_LOGIN'
+$auditToken = if ($auditorSecretEnv) {
+    Get-DotEnvValue -Path $auditorSecretEnv -Name 'MERGE_AUDITOR_AUTH_TOKEN'
+} else {
+    $null
+}
+$auditorEnabled =
+    -not [string]::IsNullOrWhiteSpace($expectedAuditorLogin) -and
+    -not [string]::IsNullOrWhiteSpace($auditToken)
+$env:MERGE_AUDITOR_PROXY_ENABLED = $auditorEnabled.ToString().ToLowerInvariant()
 
 $tailscale = Get-Command tailscale -ErrorAction SilentlyContinue
 if (-not $tailscale) {
@@ -96,13 +126,20 @@ if ($Gpu) {
     }
 }
 
-$composeArgs = @('compose', '--env-file', $localEnv, '--env-file', $publicEnv, '-f', $composeFile)
+$composeArgs = @('compose', '--env-file', $localEnv, '--env-file', $publicEnv)
+if ($auditorEnabled) {
+    $composeArgs += @('--env-file', $auditorSecretEnv)
+}
+$composeArgs += @('-f', $composeFile)
 if ($Gpu) { $composeArgs += @('-f', $gpuComposeFile) }
+if ($auditorEnabled) { $composeArgs += @('--profile', 'merge-auditor') }
 
 docker @composeArgs config --quiet
 if ($LASTEXITCODE -ne 0) { throw 'Docker Compose configuration validation failed.' }
 
-docker @composeArgs up -d --build workmachine
+$upArgs = $composeArgs + @('up', '-d', '--build', 'workmachine')
+if ($auditorEnabled) { $upArgs += 'merge-auditor' }
+docker @upArgs
 if ($LASTEXITCODE -ne 0) { throw 'Failed to start Project Moon.' }
 
 # Verify the local origin before exposing it to the public internet.
@@ -118,6 +155,44 @@ for ($attempt = 0; $attempt -lt 30; $attempt++) {
 }
 if (-not $localHealth -or $localHealth.status -ne 'ok' -or $localHealth.oauthEnabled -ne $true) {
     throw 'Local OAuth health verification failed before enabling Tailscale Funnel.'
+}
+
+if ($auditorEnabled) {
+    $auditorPortValue = Get-DotEnvValue -Path $localEnv -Name 'MERGE_AUDITOR_PORT'
+    $auditorPort = if ([string]::IsNullOrWhiteSpace($auditorPortValue)) { 3999 } else { [int]$auditorPortValue }
+    $auditorHeaders = @{ Authorization = "Bearer $auditToken" }
+    $auditorHealth = $null
+    for ($attempt = 0; $attempt -lt 30; $attempt++) {
+        try {
+            $auditorHealth = Invoke-RestMethod -Uri "http://127.0.0.1:$auditorPort/health" -Headers $auditorHeaders -TimeoutSec 5
+            if ($auditorHealth.status -eq 'ok' -and $auditorHealth.service -eq 'project-moon') { break }
+        } catch {
+            if ($attempt -eq 29) { throw }
+        }
+        Start-Sleep -Seconds 1
+    }
+    if (-not $auditorHealth -or $auditorHealth.status -ne 'ok') {
+        throw 'Local merge-auditor health verification failed.'
+    }
+
+    $auditorRpcBody = @{
+        jsonrpc = '2.0'
+        id = 1
+        method = 'tools/call'
+        params = @{
+            name = 'merge_auditor_auth_status'
+            arguments = @{}
+        }
+    } | ConvertTo-Json -Depth 6 -Compress
+    $auditorRpcHeaders = @{
+        Authorization = "Bearer $auditToken"
+        Accept = 'application/json, text/event-stream'
+    }
+    $auditorRpc = Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:$auditorPort/mcp" -Headers $auditorRpcHeaders -ContentType 'application/json' -Body $auditorRpcBody -TimeoutSec 10
+    $auditorRpcJson = $auditorRpc | ConvertTo-Json -Depth 12 -Compress
+    if ($auditorRpcJson -notmatch 'AUTHENTICATED' -or $auditorRpcJson -notmatch [regex]::Escape($expectedAuditorLogin)) {
+        throw 'Merge-auditor did not confirm the expected authenticated GitHub account.'
+    }
 }
 
 $publicHealth = $null
@@ -148,4 +223,9 @@ Write-Output "PUBLIC_HEALTH_URL=$publicUrl/health"
 Write-Output "TAILSCALE_DNS_NAME=$dnsName"
 Write-Output 'PUBLIC_TRANSPORT=tailscale-funnel'
 Write-Output 'OAUTH_ENABLED=true'
+Write-Output "MERGE_AUDITOR_PROXY_ENABLED=$($auditorEnabled.ToString().ToLowerInvariant())"
+if ($auditorEnabled) {
+    Write-Output "MERGE_AUDITOR_ACCOUNT=$expectedAuditorLogin"
+    Write-Output 'MERGE_AUDITOR_TRANSPORT=private-docker-network'
+}
 Write-Output "GPU_ENABLED=$($Gpu.ToString().ToLowerInvariant())"

@@ -6,7 +6,7 @@
 
 Project Moon turns a Linux host into a development environment that ChatGPT or another MCP client can operate directly. Instead of copying commands, logs, patches, and test results back and forth, the client can run commands, control long-running processes, edit and transfer files, work with Git, and execute a reproducible code-review workflow on the host itself.
 
-Project Moon currently exposes **32 MCP tools** across four areas:
+Project Moon exposes **32 base development tools** across four areas. When the isolated Merge Auditor is initialized, the same public Moon connection adds **6 merge gateway tools** for a total of 38; the auditor itself remains a separate private runtime and GitHub identity.
 
 | Area | Tools | Purpose |
 |---|---:|---|
@@ -14,8 +14,9 @@ Project Moon currently exposes **32 MCP tools** across four areas:
 | Filesystem | 14 | Read, write, patch, transfer, hash, copy, move, permissions, deletion |
 | AI task harness | 6 | Context alignment, planning, risk classification, programmatic validation, completion state |
 | Review harness | 6 | Pinned Git review context, artifacts, worktrees, QA evidence, review state |
+| Merge gateway | +6 optional | Route SHA-bound audit, approval, and gated merge to the private auditor runtime |
 
-The code-review workflow is **model-independent**. The AI client performs reasoning; Project Moon owns the reproducible Git state, isolated worktree, persisted review artifacts, QA evidence, and staleness checks.
+The code-review workflow is **model-independent**. The AI client performs reasoning; Project Moon owns the reproducible Git state, isolated worktree, persisted review artifacts, QA evidence, and staleness checks. The public MCP remains a single connection; auditor GitHub credentials never enter the developer runtime.
 
 ```text
                          MCP over HTTPS
@@ -124,7 +125,7 @@ Available tools:
 
 ### 3. Workflow modes: AUTO / DIRECT / HARNESS
 
-Project Moon preserves the original low-overhead behavior as a workflow mode instead of maintaining a second legacy code path. All modes expose the same 32 tools; the difference is when the agent should create `task_*` lifecycle state.
+Project Moon preserves the original low-overhead behavior as a workflow mode instead of maintaining a second legacy code path. AUTO, DIRECT, and HARNESS share the same 32 development tools; an initialized Merge Auditor adds the same 6 gateway tools independently of workflow mode. The workflow-mode difference is when the agent should create `task_*` lifecycle state.
 
 | Mode | Intended use | Behavior |
 |---|---|---|
@@ -550,7 +551,7 @@ npm test
 npm run build
 ```
 
-The test suite uses a real Streamable HTTP MCP client and covers authentication, stateless request handling, process lifecycle, file operations, UTF-8/base64 boundaries, patch application, OAuth, all 32 tool contracts, and the review-harness lifecycle.
+The test suite uses a real Streamable HTTP MCP client and covers authentication, stateless request handling, process lifecycle, file operations, UTF-8/base64 boundaries, patch application, OAuth, the 32 base tool contracts, the optional 6 merge-gateway contracts, and the review/merge-audit lifecycles.
 
 The task-harness coverage verifies risk escalation, pinned-policy anti-bypass behavior, validation fingerprints/`STALE`, compact repository context, architecture/document guards, repeated failure signatures, and validation-runtime regression detection.
 
@@ -567,7 +568,7 @@ The review E2E path specifically verifies:
 
 ### External E2E verification
 
-From a separate source checkout with development dependencies installed, all 32 tools can be exercised against a running HTTPS endpoint:
+From a separate source checkout with development dependencies installed, the 32 base tools can be exercised against a running HTTPS endpoint:
 
 ```bash
 MCP_E2E_URL='https://mcp.example.com/mcp' \
@@ -631,7 +632,7 @@ See [`.env.example`](.env.example) and [`deploy/project-moon.env.example`](deplo
 | `harnesses/code-review/` | Review workflow documentation and prompt contracts |
 | `vendor/mafia-codereview-harness/` | Upstream review-harness provenance |
 | `deploy/` | systemd, environment-file, and Nginx examples |
-| `test/all-tools.integration.test.ts` | Real MCP integration coverage for all 32 tools |
+| `test/all-tools.integration.test.ts` | Real MCP integration coverage for the 32 base development tools |
 | `test/` | Configuration, process, file, MCP, auth, OAuth, and integration tests |
 
 ## Upstream and attribution

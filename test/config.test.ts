@@ -116,4 +116,33 @@ describe("loadConfig", () => {
       ),
     ).toThrow("must not contain user credentials");
   });
+
+  it("requires both internal URL and service token when the merge-auditor proxy is enabled", () => {
+    expect(() =>
+      loadConfig(
+        {
+          MCP_AUTH_TOKEN: "secret",
+          MCP_MERGE_AUDITOR_PROXY_ENABLED: "true",
+          MCP_MERGE_AUDITOR_INTERNAL_URL: "http://merge-auditor:2999/mcp",
+        },
+        "/tmp",
+      ),
+    ).toThrow(/MCP_MERGE_AUDITOR_INTERNAL_URL and MCP_MERGE_AUDITOR_INTERNAL_TOKEN/);
+
+    const config = loadConfig(
+      {
+        MCP_AUTH_TOKEN: "secret",
+        MCP_MERGE_AUDITOR_PROXY_ENABLED: "true",
+        MCP_MERGE_AUDITOR_INTERNAL_URL: "http://merge-auditor:2999/mcp",
+        MCP_MERGE_AUDITOR_INTERNAL_TOKEN: "internal-secret",
+      },
+      "/tmp",
+    );
+    expect(config).toMatchObject({
+      mergeAuditorProxyEnabled: true,
+      mergeAuditorInternalUrl: "http://merge-auditor:2999/mcp",
+      mergeAuditorInternalToken: "internal-secret",
+      mergeAuditorRequestTimeoutMs: 60_000,
+    });
+  });
 });
