@@ -2,47 +2,59 @@
 
 **한국어** | [English](README.en.md)
 
-> ChatGPT·Codex·기타 MCP 클라이언트가 개발용 컴퓨터를 직접 조작할 수 있도록 연결하는 **풀 액세스 원격 개발 MCP 런타임**입니다.
+[![Project Moon CI](https://github.com/kankinku/project-moon/actions/workflows/ci.yml/badge.svg)](https://github.com/kankinku/project-moon/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-Project Moon은 AI가 단순히 명령어를 제안하는 수준을 넘어, 실제 개발 환경에서 명령을 실행하고 파일을 수정하며 Git 상태를 확인하고 테스트·빌드·코드 리뷰까지 수행할 수 있도록 구성한 MCP 서버입니다.
+> ChatGPT·Codex·기타 MCP 클라이언트가 실제 개발 환경에서 명령 실행, 파일 수정, Git 작업, 검증과 독립 리뷰까지 수행할 수 있도록 연결하는 **풀 액세스 원격 개발 MCP 런타임**입니다.
 
-현재 Project Moon은 **32개의 MCP 도구**를 제공합니다.
+Project Moon은 “AI가 명령을 제안하고 사람이 복사해서 실행하는 방식”을 줄이고, AI가 개발 환경에서 직접 작업하되 **개발 권한과 최종 검수 권한을 분리**할 수 있도록 설계되었습니다.
 
-| 영역 | 도구 수 | 주요 기능 |
-|---|---:|---|
-| 명령·프로세스 | 6 | 셸 명령, 스크립트, 장기 실행 프로세스, stdin, 출력 조회, 종료 |
-| 파일시스템 | 14 | 읽기, 쓰기, 패치, 업로드·다운로드, 해시, 복사, 이동, 삭제 |
-| AI 작업 하니스 | 6 | 구조 파악, 계획, 위험도 분류, 프로그램적 검증, 완료 상태 관리 |
-| 코드 리뷰 하니스 | 6 | Git 기준점 고정, 리뷰 상태, Worktree, QA, 검증 증거 관리 |
+### 핵심 구성
+
+| 구성 | 역할 | 기본 도구/권한 |
+|---|---|---|
+| **Developer Runtime** | 구현, 파일 수정, 명령 실행, 테스트, Git 작업, 내부 리뷰 | MCP 도구 32개 |
+| **Merge Auditor Runtime** | 고정된 PR diff 검수, 독립 승인/반려, SHA 변경 감지 | 제한된 MCP 도구 8개 |
+| **Public Transport** | 외부 MCP 연결 | HTTPS + Tailscale Funnel |
+| **Authentication** | MCP 접근 제어 | OAuth 2.1 + DCR + PKCE 또는 Static Bearer |
+| **Merge Gate** | `main` 보호 | PR + CI `validate` + 독립 승인 |
 
 ```text
-ChatGPT / Codex / MCP Client
-             │
-             │ MCP over HTTPS + OAuth 2.1
-             ▼
-       Tailscale Funnel
-             │
-             ▼
-      127.0.0.1:2999
-             │
-           Nginx
-             │
-             ▼
-      Project Moon MCP
-        127.0.0.1:3000
-             │
-     ┌───────┬──────────┬──────────┐
-     ▼       ▼          ▼          ▼
-   명령     파일     작업 하니스   리뷰 하니스
-     │       │          │          │
-     └───────┴──────────┴──────────┘
-             │
-             ▼
-        개발 환경 / Git
+                         ┌─────────────────────────┐
+ChatGPT / Codex ────────►│   Developer Runtime     │
+                         │ command / file / Git     │
+                         │ task / internal review   │
+                         └────────────┬────────────┘
+                                      │
+                                      │ commit / push / PR
+                                      ▼
+                              GitHub Pull Request
+                                      │
+                         ┌────────────┴────────────┐
+                         │                         │
+                         ▼                         ▼
+                  Project Moon CI          Merge Auditor Runtime
+                     validate              read-only repository
+                         │                 pinned SHA / diff audit
+                         │                         │
+                         └────────────┬────────────┘
+                                      ▼
+                              protected `main`
 ```
 
+Merge Auditor는 개발 런타임과 **별도 GitHub 계정·별도 Docker 상태 볼륨·별도 MCP 도구 표면**을 사용합니다. 감사 대상 저장소는 read-only로 마운트되고, 검수 계정이 PR 작성자와 동일하면 승인을 거부합니다. 자세한 설계는 [`docs/merge-audit-architecture.md`](docs/merge-audit-architecture.md)를 참고하세요.
+
+### 빠른 링크
+
+- **Windows + Docker 시작:** [빠른 시작](#windows--docker-빠른-시작)
+- **AI 작업 모드:** [AUTO / DIRECT / HARNESS](#ai-작업-모드-auto--direct--harness)
+- **인증 및 보안:** [OAuth 2.1 / Static Bearer](#인증과-보안)
+- **ChatGPT 연결:** [ChatGPT 연결](#chatgpt-연결)
+- **독립 Merge Audit:** [`docs/merge-audit-architecture.md`](docs/merge-audit-architecture.md)
+- **상세 로컬 설치:** [`LOCAL_DOCKER_SETUP.md`](LOCAL_DOCKER_SETUP.md)
+
 > [!CAUTION]
-> Project Moon은 **샌드박스가 아닙니다.** 명령 허용 목록, 경로 제한, 명령별 승인 게이트, 권한 축소 계층을 기본 제공하지 않습니다. Project Moon을 높은 권한으로 실행하면 인증된 AI 클라이언트 역시 그 권한으로 시스템을 제어할 수 있습니다. 신뢰할 수 있는 개인 개발 환경에서만 사용하고, 인터넷에 공개할 때는 반드시 HTTPS와 강한 인증을 사용하세요.
+> Project Moon은 **샌드박스가 아닙니다.** Developer Runtime은 인증된 클라이언트에 호스트 수준의 명령 실행과 파일 변경 능력을 제공합니다. 신뢰할 수 있는 개인 개발 환경에서만 실행하고, 인터넷에 노출할 때는 HTTPS와 강한 인증을 사용하세요. 최종 merge 검수는 개발 런타임과 분리된 Merge Auditor 계정/런타임을 사용하는 구성을 권장합니다.
 
 ---
 
