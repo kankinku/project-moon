@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -246,6 +246,38 @@ describe("independent full merge audit", () => {
         validationEvidence: validation("f".repeat(40), "release"),
       }),
     ).rejects.toThrow(/audited head SHA/);
+  });
+
+  it("rejects legacy audit manifests instead of treating old approvals as full-review approvals", async () => {
+    const { repo } = await fixture();
+    const runId = "legacy-run";
+    const artifactDir = path.join(repo, ".moon", "merge-audits", "feature-audit", runId);
+    await mkdir(artifactDir, { recursive: true });
+    await writeFile(
+      path.join(artifactDir, "manifest.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        runId,
+        repoRoot: repo,
+        baseBranch: "main",
+        headBranch: "feature/audit",
+        baseSha: "a".repeat(40),
+        headSha: "b".repeat(40),
+        mergeBase: "a".repeat(40),
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        state: "MERGE_APPROVED",
+        decision: "MERGE_APPROVED",
+        unresolvedP1: 0,
+        changedFiles: [],
+        diffStat: "",
+        artifactDir,
+      }),
+      "utf8",
+    );
+
+    const service = new MergeAuditService();
+    await expect(service.status({ repoPath: repo, runId })).rejects.toThrow(/Legacy merge audit run/);
   });
 
   it("uses the pinned base policy even when the feature branch weakens moon.config.json", async () => {

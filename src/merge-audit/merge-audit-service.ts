@@ -184,7 +184,17 @@ export class MergeAuditService {
 
   async #readManifest(repoRoot: string, runId: string): Promise<MergeAuditManifest> {
     const runDir = await this.#findRunDir(repoRoot, runId);
-    return JSON.parse(await readFile(path.join(runDir, "manifest.json"), "utf8")) as MergeAuditManifest;
+    const raw = JSON.parse(await readFile(path.join(runDir, "manifest.json"), "utf8")) as {
+      schemaVersion?: unknown;
+      target?: unknown;
+      risk?: unknown;
+    };
+    if (raw.schemaVersion !== 2 || raw.target === undefined || raw.risk === undefined) {
+      throw new Error(
+        "Legacy merge audit run is incompatible with the full-review gate. Start a fresh audit for the current repository/PR/base/head.",
+      );
+    }
+    return raw as MergeAuditManifest;
   }
 
   async #writeManifest(manifest: MergeAuditManifest): Promise<void> {
@@ -257,7 +267,7 @@ export class MergeAuditService {
 
     const now = new Date().toISOString();
     const manifest: MergeAuditManifest = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       runId,
       repoRoot,
       target: { repository, pullNumber: input.pullNumber },

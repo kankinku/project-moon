@@ -145,7 +145,7 @@ The auditor does not execute untrusted repository code itself. `MERGE_APPROVED` 
 5. risk-required validation evidence passed for the exact head SHA;
 6. an evidence-based rationale is recorded.
 
-The manifest persists structured findings, coverage, validation evidence, risk, rationale, and approval SHA. Approval remains valid only for the pinned target.
+The manifest persists structured findings, coverage, validation evidence, risk, rationale, and approval SHA. Approval remains valid only for the pinned target. Full-review manifests use schema version 2; legacy schema version 1 audit runs are deliberately rejected and must be recreated because their earlier approvals did not satisfy the full-review contract.
 
 ## GitHub review publication
 

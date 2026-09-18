@@ -63,7 +63,7 @@ export interface MergeAuditTarget {
 }
 
 export interface MergeAuditManifest {
-  schemaVersion: 1;
+  schemaVersion: 2;
   runId: string;
   repoRoot: string;
   target: MergeAuditTarget;
