@@ -85,3 +85,6 @@ state/
 *.db-journal
 *.db-wal
 *.db-shm
+
+# Local merge-auditor bearer secret
+merge-auditor.env
