@@ -43,6 +43,9 @@ describe("stable Tailscale Funnel deployment", () => {
     expect(startScript).toContain("MCP_OAUTH_ENABLED=true");
     expect(startScript).toContain("MCP_ALLOW_NO_AUTH=false");
     expect(startScript).toContain("merge-auditor.env");
+    expect(startScript).toContain("$auditorEnabled = -not [string]::IsNullOrWhiteSpace($auditToken)");
+    expect(startScript).toContain("Set-DotEnvValue -Path $localEnv -Name 'MCP_GITHUB_AUDITOR_LOGIN'");
+    expect(startScript).toContain("MERGE_AUDITOR_ACCOUNT_RECOVERED=");
     expect(startScript).toContain("MERGE_AUDITOR_PROXY_ENABLED");
     expect(startScript).toContain("'--profile', 'merge-auditor'");
     expect(startScript).toContain("merge_auditor_auth_status");

@@ -30,6 +30,32 @@ function Get-DotEnvValue {
     }
     return $null
 }
+function Set-DotEnvValue {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string]$Name,
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$Value
+    )
+
+    $content = if (Test-Path -LiteralPath $Path -PathType Leaf) {
+        [System.IO.File]::ReadAllText($Path)
+    } else {
+        ''
+    }
+    $pattern = '(?m)^' + [regex]::Escape($Name) + '=.*$'
+    $line = "$Name=$Value"
+    if ([regex]::IsMatch($content, $pattern)) {
+        $content = [regex]::Replace(
+            $content,
+            $pattern,
+            [System.Text.RegularExpressions.MatchEvaluator]{ param($m) $line }
+        )
+    } else {
+        if ($content.Length -gt 0 -and -not $content.EndsWith("`n")) { $content += "`n" }
+        $content += "$line`n"
+    }
+    [System.IO.File]::WriteAllText($Path, $content, [System.Text.UTF8Encoding]::new($false))
+}
 
 if (-not (Test-Path -LiteralPath $localEnv)) {
     throw "Missing $localEnv. Copy tunneling/.env.local.example first."
@@ -41,9 +67,11 @@ $auditToken = if ($auditorSecretEnv) {
 } else {
     $null
 }
-$auditorEnabled =
-    -not [string]::IsNullOrWhiteSpace($expectedAuditorLogin) -and
-    -not [string]::IsNullOrWhiteSpace($auditToken)
+# The host-only service token is the durable signal that the auditor was initialized.
+# A project-local checkout may not yet contain MCP_GITHUB_AUDITOR_LOGIN. In that
+# case the authenticated account is discovered from the persistent auditor volume
+# and written back below before merge authority is accepted.
+$auditorEnabled = -not [string]::IsNullOrWhiteSpace($auditToken)
 $env:MERGE_AUDITOR_PROXY_ENABLED = $auditorEnabled.ToString().ToLowerInvariant()
 
 $tailscale = Get-Command tailscale -ErrorAction SilentlyContinue
@@ -189,9 +217,54 @@ if ($auditorEnabled) {
         Accept = 'application/json, text/event-stream'
     }
     $auditorRpc = Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:$auditorPort/mcp" -Headers $auditorRpcHeaders -ContentType 'application/json' -Body $auditorRpcBody -TimeoutSec 10
-    $auditorRpcJson = $auditorRpc | ConvertTo-Json -Depth 12 -Compress
-    if ($auditorRpcJson -notmatch 'AUTHENTICATED' -or $auditorRpcJson -notmatch [regex]::Escape($expectedAuditorLogin)) {
-        throw 'Merge-auditor did not confirm the expected authenticated GitHub account.'
+    $auditorStatus = $auditorRpc.result.structuredContent
+    if (-not $auditorStatus -or $auditorStatus.state -ne 'AUTHENTICATED') {
+        throw 'Merge-auditor GitHub account is not authenticated.'
+    }
+
+    $actualAuditorLogin = [string]$auditorStatus.account
+    if ([string]::IsNullOrWhiteSpace($actualAuditorLogin)) {
+        throw 'Merge-auditor did not report the authenticated GitHub account.'
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($expectedAuditorLogin)) {
+        if (-not $actualAuditorLogin.Equals($expectedAuditorLogin, [System.StringComparison]::OrdinalIgnoreCase)) {
+            throw "Merge-auditor authenticated account $actualAuditorLogin does not match expected account $expectedAuditorLogin."
+        }
+    } else {
+        $expectedAuditorLogin = $actualAuditorLogin
+        Set-DotEnvValue -Path $localEnv -Name 'MCP_GITHUB_AUDITOR_LOGIN' -Value $expectedAuditorLogin
+        $env:MCP_GITHUB_AUDITOR_LOGIN = $expectedAuditorLogin
+
+        $recreateAuditorArgs = $composeArgs + @('up', '-d', '--force-recreate', 'merge-auditor')
+        docker @recreateAuditorArgs | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            throw 'Failed to recreate merge-auditor with the recovered expected GitHub account.'
+        }
+
+        $reverified = $false
+        for ($attempt = 0; $attempt -lt 30; $attempt++) {
+            try {
+                $auditorRpc = Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:$auditorPort/mcp" -Headers $auditorRpcHeaders -ContentType 'application/json' -Body $auditorRpcBody -TimeoutSec 10
+                $auditorStatus = $auditorRpc.result.structuredContent
+                if (
+                    $auditorStatus.state -eq 'AUTHENTICATED' -and
+                    ([string]$auditorStatus.account).Equals($expectedAuditorLogin, [System.StringComparison]::OrdinalIgnoreCase) -and
+                    $auditorStatus.matchesExpected -eq $true
+                ) {
+                    $reverified = $true
+                    break
+                }
+            } catch {
+                if ($attempt -eq 29) { throw }
+            }
+            Start-Sleep -Seconds 1
+        }
+        if (-not $reverified) {
+            throw 'Merge-auditor account recovery succeeded but runtime account pinning could not be reverified.'
+        }
+
+        Write-Output "MERGE_AUDITOR_ACCOUNT_RECOVERED=$expectedAuditorLogin"
     }
 }
 
