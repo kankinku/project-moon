@@ -64,3 +64,7 @@ merge_audit:
   - id: MERGE-004
     rule: 전체 코드 리뷰에 변경 외 문맥이 필요하면 auditor는 audited head SHA에 고정된 repository-relative git show/git grep 조회만 사용하고 arbitrary filesystem read 권한을 얻지 않는다.
     stacks: [merge-audit, review, security]
+
+  - id: MERGE-005
+    rule: MERGE_APPROVED에 필요한 validation evidence는 backend resolver가 실제 증거를 재검증한 경우에만 인정하며, 현재 moon_task는 실제 task 상태·profile·audited HEAD·repository fingerprint가 모두 일치해야 한다.
+    stacks: [merge-audit, validation, task, security]

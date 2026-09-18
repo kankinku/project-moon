@@ -69,3 +69,15 @@
     The Merge Auditor performs a read-only full final review over requirements, correctness, code quality, tests, regression, architecture, API contracts, security, performance, operations, and maintainability. It may inspect unchanged related repository content only through bounded git show/git grep queries pinned to the exact audited head SHA, without arbitrary filesystem-read authority. It persists structured P1-P4 findings, category coverage, risk-derived validation requirements, and validation evidence bound to the exact head SHA. Approval is bound to repository, PR, base SHA, and head SHA; movement of either base or head invalidates it. Repository code is not executed inside the auditor runtime; deterministic execution remains in developer/CI environments and the mechanical GitHub gate rechecks live CI before merge.
   consequence: |
     MERGE_APPROVED now represents a full independent quality decision rather than only a safe-to-execute merge decision. The client must provide traceable validation evidence, and a new audit is required whenever the PR base or head changes.
+
+- id: ADR-008
+  title: Merge validation evidence must be backend-verified
+  status: adopted
+  date: 2026-09-18
+  stacks: [merge-audit, validation, task, security]
+  context: |
+    Merge Auditor가 validationEvidence의 source, profile, passed, headSha, reference를 호출자 입력만으로 신뢰하면 에이전트의 실수나 과장된 자기보고가 품질 게이트를 통과할 수 있다. 반대로 credential을 가진 auditor 런타임에서 대상 코드를 직접 실행하면 보안 경계가 약해진다.
+  decision: |
+    MERGE_APPROVED에 필요한 검증 증거는 backend resolver가 실제 증거를 재확인한 경우에만 인정한다. 현재 source=moon_task는 .moon/tasks의 실제 task manifest를 조회하고 VERIFIED/COMPLETE 상태, 실제 validation profile/pass 상태, audited HEAD 일치, 현재 repository fingerprint와 저장된 validation fingerprint 일치를 모두 확인한다. github_ci, external_ci, moon_review는 provider-backed resolver가 추가되기 전까지 보조 증거로만 저장하고 승인 프로필 충족에는 사용하지 않는다. verified-evidence 계약 이전의 merge-audit schema v1/v2 run은 재사용하지 않는다.
+  consequence: |
+    단순 문자열 자기보고로는 merge 승인을 얻을 수 없고, 검증 이후 작업 트리나 HEAD가 바뀌면 task evidence가 자동으로 stale 처리된다. 향후 GitHub/외부 CI provider resolver를 추가할 때 동일한 verified evidence 인터페이스를 확장한다.

@@ -6,7 +6,9 @@ import path from "node:path";
 import { promisify } from "node:util";
 
 import { loadHarnessConfig } from "../task/task-config.js";
+import { TaskRepository } from "../task/task-repository.js";
 import { classifyRisk } from "../task/task-risk.js";
+import type { TaskManifest } from "../task/task-types.js";
 import type {
   MergeAuditCategory,
   MergeAuditCoverage,
@@ -135,6 +137,7 @@ function validationProfileSatisfied(
   return evidence.some((item) => {
     const profileIndex = manifest.risk.validationProfileOrder.indexOf(item.profile);
     return (
+      item.verified === true &&
       item.passed &&
       item.headSha === manifest.headSha &&
       profileIndex >= requiredIndex &&
@@ -146,6 +149,7 @@ function validationProfileSatisfied(
 
 export class MergeAuditService {
   readonly #stateRoot?: string;
+  readonly #taskRepository = new TaskRepository();
 
   constructor(options: { stateRoot?: string } = {}) {
     this.#stateRoot = options.stateRoot ? path.resolve(options.stateRoot) : undefined;
@@ -217,6 +221,82 @@ export class MergeAuditService {
     throw new Error(`Unknown merge audit run: ${runId}`);
   }
 
+  async #findTaskRunDir(repoRoot: string, runId: string): Promise<string> {
+    assertRunId(runId);
+    const root = path.join(repoRoot, ".moon", "tasks");
+    const branches = await readdir(root, { withFileTypes: true }).catch(() => []);
+    for (const branch of branches) {
+      if (!branch.isDirectory()) continue;
+      const candidate = path.join(root, branch.name, runId);
+      if (await exists(path.join(candidate, "manifest.json"))) return candidate;
+    }
+    throw new Error(`Unknown Moon task validation reference: ${runId}`);
+  }
+
+  async #resolveValidationEvidence(
+    repoRoot: string,
+    manifest: MergeAuditManifest,
+    evidence: MergeAuditValidationEvidence,
+  ): Promise<MergeAuditValidationEvidence> {
+    if (evidence.source !== "moon_task") {
+      return {
+        ...evidence,
+        verified: false,
+        verification:
+          `${evidence.source} evidence is supplemental only until a provider-backed resolver is configured`,
+      };
+    }
+
+    const taskRunDir = await this.#findTaskRunDir(repoRoot, evidence.reference);
+    const taskManifest = JSON.parse(
+      await readFile(path.join(taskRunDir, "manifest.json"), "utf8"),
+    ) as TaskManifest;
+    const validation = taskManifest.validation;
+    if (!validation?.passed) {
+      throw new Error(`Moon task evidence ${evidence.reference} does not contain a passing validation`);
+    }
+    if (!["VERIFIED", "COMPLETE"].includes(taskManifest.state)) {
+      throw new Error(
+        `Moon task evidence ${evidence.reference} is not in a verified state: ${taskManifest.state}`,
+      );
+    }
+    if (evidence.profile !== validation.profile) {
+      throw new Error(
+        `Moon task evidence profile mismatch: submitted ${evidence.profile}, actual ${validation.profile}`,
+      );
+    }
+    if (evidence.passed !== validation.passed) {
+      throw new Error(
+        `Moon task evidence pass-state mismatch for ${evidence.reference}`,
+      );
+    }
+    if (evidence.headSha !== manifest.headSha) {
+      throw new Error(
+        `Moon task evidence head SHA ${evidence.headSha} does not match audited SHA ${manifest.headSha}`,
+      );
+    }
+
+    const currentHeadSha = await this.#git(repoRoot, ["rev-parse", "HEAD"]);
+    if (currentHeadSha !== manifest.headSha) {
+      throw new Error(
+        `Cannot verify Moon task evidence because repository HEAD ${currentHeadSha} does not match audited SHA ${manifest.headSha}`,
+      );
+    }
+    const currentFingerprint = await this.#taskRepository.fingerprint(repoRoot);
+    if (currentFingerprint !== validation.fingerprint) {
+      throw new Error(
+        `Moon task evidence ${evidence.reference} is stale: validated fingerprint does not match the audited workspace`,
+      );
+    }
+
+    return {
+      ...evidence,
+      verified: true,
+      verification:
+        `Verified Moon task ${evidence.reference}: state=${taskManifest.state}, profile=${validation.profile}, fingerprint=${validation.fingerprint}`,
+    };
+  }
+
   async #readManifest(repoRoot: string, runId: string): Promise<MergeAuditManifest> {
     const runDir = await this.#findRunDir(repoRoot, runId);
     const raw = JSON.parse(await readFile(path.join(runDir, "manifest.json"), "utf8")) as {
@@ -224,9 +304,9 @@ export class MergeAuditService {
       target?: unknown;
       risk?: unknown;
     };
-    if (raw.schemaVersion !== 2 || raw.target === undefined || raw.risk === undefined) {
+    if (raw.schemaVersion !== 3 || raw.target === undefined || raw.risk === undefined) {
       throw new Error(
-        "Legacy merge audit run is incompatible with the full-review gate. Start a fresh audit for the current repository/PR/base/head.",
+        "Legacy merge audit run is incompatible with the verified-evidence full-review gate. Start a fresh audit for the current repository/PR/base/head.",
       );
     }
     return raw as MergeAuditManifest;
@@ -302,7 +382,7 @@ export class MergeAuditService {
 
     const now = new Date().toISOString();
     const manifest: MergeAuditManifest = {
-      schemaVersion: 2,
+      schemaVersion: 3,
       runId,
       repoRoot,
       target: { repository, pullNumber: input.pullNumber },
@@ -477,6 +557,11 @@ export class MergeAuditService {
         throw new Error("Validation evidence requires reference and summary");
       }
     }
+    const resolvedValidationEvidence = await Promise.all(
+      input.validationEvidence.map((evidence) =>
+        this.#resolveValidationEvidence(repoRoot, manifest, evidence),
+      ),
+    );
 
     const unresolvedP1 = input.findings.filter(
       (finding) => finding.severity === "P1" && !finding.resolved,
@@ -484,7 +569,7 @@ export class MergeAuditService {
     const concernCategories = input.coverage
       .filter((item) => item.verdict === "CONCERN")
       .map((item) => item.category);
-    const validationSatisfied = validationProfileSatisfied(input.validationEvidence, manifest);
+    const validationSatisfied = validationProfileSatisfied(resolvedValidationEvidence, manifest);
 
     if (input.decision === "MERGE_APPROVED") {
       if (unresolvedP1 !== 0) {
@@ -497,7 +582,7 @@ export class MergeAuditService {
       }
       if (!validationSatisfied) {
         throw new Error(
-          `MERGE_APPROVED requires passing validation evidence at profile ${manifest.risk.requiredValidationProfile} or stronger for the audited head SHA`,
+          `MERGE_APPROVED requires backend-verified validation evidence at profile ${manifest.risk.requiredValidationProfile} or stronger for the audited head SHA`,
         );
       }
     }
@@ -507,7 +592,7 @@ export class MergeAuditService {
     manifest.unresolvedP1 = unresolvedP1;
     manifest.findings = input.findings;
     manifest.coverage = input.coverage;
-    manifest.validationEvidence = input.validationEvidence;
+    manifest.validationEvidence = resolvedValidationEvidence;
     manifest.state = input.decision;
     manifest.approvalSha = input.decision === "MERGE_APPROVED" ? manifest.headSha : undefined;
     await this.#writeManifest(manifest);
@@ -520,7 +605,7 @@ export class MergeAuditService {
           risk: manifest.risk,
           findings: input.findings,
           coverage: input.coverage,
-          validationEvidence: input.validationEvidence,
+          validationEvidence: resolvedValidationEvidence,
         },
         null,
         2,
@@ -554,7 +639,8 @@ export class MergeAuditService {
       unresolvedP1,
       concernCategories,
       validationSatisfied,
-      readyToMerge: input.decision === "MERGE_APPROVED",
+      verifiedValidationEvidence: resolvedValidationEvidence.filter((item) => item.verified === true),
+      readyToMerge: input.decision === "MERGE_APPROVED" && validationSatisfied,
     };
   }
 

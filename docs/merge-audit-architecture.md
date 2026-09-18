@@ -131,8 +131,11 @@ Validation evidence records:
 - pass/fail
 - traceable reference
 - summary of checks performed
+- backend verification status and verification detail
 
-The auditor does not execute untrusted repository code itself. `MERGE_APPROVED` requires passing evidence for the exact audited head SHA at the required profile or stronger. The later GitHub merge gate independently requires live CI/status checks to exist and be successful.
+The auditor does not execute untrusted repository code itself. For `source=moon_task`, it resolves the referenced Moon task run from the audited workspace, requires a passing `VERIFIED` or `COMPLETE` validation, checks that the submitted profile/pass state matches the task record, requires repository `HEAD` to equal the audited head SHA, and recomputes the repository fingerprint to prove that the task validation still describes the exact audited workspace.
+
+`github_ci`, `external_ci`, and `moon_review` are currently supplemental evidence only. They are persisted for reviewer context but do not satisfy the risk-required validation profile until a provider-backed resolver is implemented. The later GitHub merge gate still independently requires live CI/status checks to exist and be successful.
 
 ## Approval gate
 
@@ -142,10 +145,10 @@ The auditor does not execute untrusted repository code itself. `MERGE_APPROVED` 
 2. every mandatory review category is present;
 3. no category has `CONCERN`;
 4. no unresolved P1 finding remains;
-5. risk-required validation evidence passed for the exact head SHA;
+5. at least one backend-verified validation evidence item meets the risk-required profile for the exact head SHA;
 6. an evidence-based rationale is recorded.
 
-The manifest persists structured findings, coverage, validation evidence, risk, rationale, and approval SHA. Approval remains valid only for the pinned target. Full-review manifests use schema version 2; legacy schema version 1 audit runs are deliberately rejected and must be recreated because their earlier approvals did not satisfy the full-review contract.
+The manifest persists structured findings, coverage, resolved validation evidence, risk, rationale, and approval SHA. Approval remains valid only for the pinned target. Verified-evidence full-review manifests use schema version 3; schema versions 1 and 2 are deliberately rejected and must be recreated because their earlier approvals did not satisfy the current provenance contract.
 
 ## GitHub review publication
 
@@ -231,6 +234,6 @@ implementation
 - base or head movement invalidates approval;
 - full review coverage is mandatory before approval;
 - unresolved P1 findings block approval;
-- risk-required validation evidence must match the exact head SHA;
+- risk-required validation evidence must be backend-verified and match the exact head SHA/fingerprint;
 - live GitHub CI and the auditor's own approval are required before merge;
 - no admin bypass is used by the merge executor.

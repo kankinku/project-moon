@@ -41,13 +41,17 @@ export interface MergeAuditCoverage {
   evidence: string;
 }
 
+export type MergeAuditValidationSource = "moon_task" | "moon_review" | "github_ci" | "external_ci";
+
 export interface MergeAuditValidationEvidence {
-  source: "moon_task" | "moon_review" | "github_ci" | "external_ci";
+  source: MergeAuditValidationSource;
   profile: string;
   headSha: string;
   passed: boolean;
   reference: string;
   summary: string;
+  verified?: boolean;
+  verification?: string;
 }
 
 export interface MergeAuditRisk {
@@ -63,7 +67,7 @@ export interface MergeAuditTarget {
 }
 
 export interface MergeAuditManifest {
-  schemaVersion: 2;
+  schemaVersion: 3;
   runId: string;
   repoRoot: string;
   target: MergeAuditTarget;
