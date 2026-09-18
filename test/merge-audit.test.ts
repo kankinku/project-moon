@@ -46,7 +46,7 @@ function supplementalValidation(
   profile = "release",
 ): MergeAuditValidationEvidence[] {
   return [{
-    source: "github_ci",
+    source: "external_ci",
     profile,
     headSha,
     passed: true,
@@ -63,17 +63,74 @@ describe("independent full merge audit", () => {
     await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
   });
 
-  async function fixture(): Promise<{ repo: string; featureSha: string }> {
+  async function fixture(): Promise<{ repo: string; baseSha: string; featureSha: string }> {
     const repo = await mkdtemp(path.join(os.tmpdir(), "project-moon-merge-audit-"));
     roots.push(repo);
     await git(repo, "init", "-b", "main");
     await git(repo, "config", "user.name", "Moon Test");
     await git(repo, "config", "user.email", "moon-test@example.invalid");
     await writeFile(path.join(repo, ".git", "info", "exclude"), ".moon/\n", { flag: "a" });
-    await commitFile(repo, "base.txt", "base\n", "base");
+    await mkdir(path.join(repo, ".github", "workflows"), { recursive: true });
+    await writeFile(
+      path.join(repo, "moon.config.json"),
+      `${JSON.stringify({
+        schemaVersion: 1,
+        validation: {
+          profileOrder: ["fast", "normal", "release"],
+          profiles: {
+            fast: ["npm run typecheck"],
+            normal: ["npm run typecheck", "npm test"],
+            release: ["npm run typecheck", "npm test", "npm run build"],
+          },
+          riskProfiles: { low: "fast", medium: "normal", high: "release" },
+        },
+        risk: {
+          highPathPatterns: [],
+          mediumPathPatterns: [],
+          highKeywords: ["security-sensitive", "authentication"],
+          mediumKeywords: [],
+        },
+      }, null, 2)}\n`,
+      "utf8",
+    );
+    await writeFile(
+      path.join(repo, "package.json"),
+      `${JSON.stringify({
+        scripts: {
+          typecheck: "tsc --noEmit",
+          test: "vitest run",
+          build: "tsc",
+        },
+      }, null, 2)}\n`,
+      "utf8",
+    );
+    await writeFile(
+      path.join(repo, ".github", "workflows", "ci.yml"),
+      `name: CI
+
+on:
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Tests
+        run: npm test
+      - name: Build
+        run: npm run build
+`,
+      "utf8",
+    );
+    await writeFile(path.join(repo, "base.txt"), "base\n", "utf8");
+    await git(repo, "add", ".");
+    await git(repo, "commit", "-m", "base");
+    const baseSha = await git(repo, "rev-parse", "HEAD");
     await git(repo, "checkout", "-b", "feature/audit");
     const featureSha = await commitFile(repo, "feature.txt", "feature\n", "feature");
-    return { repo, featureSha };
+    return { repo, baseSha, featureSha };
   }
 
   async function start(service: MergeAuditService, repo: string, request?: string) {
@@ -86,6 +143,63 @@ describe("independent full merge audit", () => {
       request,
       internalAuditSummary: "Developer-side review completed; independently verify it.",
     });
+  }
+
+  function githubServiceAndEvidence(
+    headSha: string,
+    baseSha: string,
+    profile = "release",
+    options: { failedStep?: string } = {},
+  ): { service: MergeAuditService; evidence: MergeAuditValidationEvidence[] } {
+    const githubCommand = async (args: string[]) => {
+      const route = args[1] ?? "";
+      if (route.endsWith("/actions/runs/123")) {
+        return JSON.stringify({
+          id: 123,
+          head_sha: headSha,
+          head_branch: "feature/audit",
+          event: "pull_request",
+          status: "completed",
+          conclusion: "success",
+          name: "CI",
+          path: ".github/workflows/ci.yml",
+          pull_requests: [{
+            number: 17,
+            head: { sha: headSha },
+            base: { sha: baseSha },
+          }],
+        });
+      }
+      if (route.includes("/actions/runs/123/jobs")) {
+        const step = (name: string) => ({
+          name,
+          status: "completed",
+          conclusion: options.failedStep === name ? "failure" : "success",
+        });
+        return JSON.stringify({
+          jobs: [{
+            id: 999,
+            name: "validate",
+            status: "completed",
+            conclusion: "success",
+            head_sha: headSha,
+            steps: [step("Typecheck"), step("Tests"), step("Build")],
+          }],
+        });
+      }
+      throw new Error(`unexpected gh call: ${args.join(" ")}`);
+    };
+    return {
+      service: new MergeAuditService({ githubCommand }),
+      evidence: [{
+        source: "github_ci",
+        profile,
+        headSha,
+        passed: true,
+        reference: "https://github.com/example/project/actions/runs/123/job/999",
+        summary: "Provider-verified GitHub Actions validation passed.",
+      }],
+    };
   }
 
   async function moonTaskValidation(
@@ -131,7 +245,7 @@ describe("independent full merge audit", () => {
     }];
   }
 
-  it("requires backend-verified Moon task evidence before exact-SHA approval", async () => {
+  it("treats Moon task evidence as supplemental even when internally consistent", async () => {
     const { repo, featureSha } = await fixture();
     const service = new MergeAuditService();
     const started = await start(service, repo, "Add the feature safely");
@@ -180,44 +294,49 @@ describe("independent full merge audit", () => {
     ).rejects.toThrow(/repository-relative Git paths/);
 
     const validationEvidence = await moonTaskValidation(repo, featureSha);
-    const decision = await service.decide({
+    await expect(
+      service.decide({
+        repoPath: repo,
+        runId: String(started.runId),
+        decision: "MERGE_APPROVED",
+        rationale: "Developer-workspace task evidence must not satisfy the independent provider gate.",
+        findings: [],
+        coverage: fullCoverage(),
+        validationEvidence,
+      }),
+    ).rejects.toThrow(/independently verified GitHub Actions evidence/);
+
+    const supplemental = await service.decide({
       repoPath: repo,
       runId: String(started.runId),
-      decision: "MERGE_APPROVED",
-      rationale: "All mandatory review categories and verified validation evidence passed.",
+      decision: "CHANGES_REQUIRED",
+      rationale: "Moon task evidence was checked but remains supplemental.",
       findings: [],
       coverage: fullCoverage(),
       validationEvidence,
     });
-    expect(decision).toMatchObject({
-      decision: "MERGE_APPROVED",
-      approvalSha: featureSha,
-      unresolvedP1: 0,
-      validationSatisfied: true,
-      readyToMerge: true,
-      verifiedValidationEvidence: [
-        expect.objectContaining({ source: "moon_task", verified: true }),
-      ],
+    expect(supplemental).toMatchObject({
+      decision: "CHANGES_REQUIRED",
+      validationSatisfied: false,
+      readyToMerge: false,
+      verifiedValidationEvidence: [],
     });
 
     const status = await service.status({ repoPath: repo, runId: String(started.runId) });
     expect(status).toMatchObject({
-      stale: false,
-      coverageComplete: true,
-      validationSatisfied: true,
-      qualityGateSatisfied: true,
-      readyToMerge: true,
+      validationSatisfied: false,
+      readyToMerge: false,
       validationEvidence: [
         expect.objectContaining({
           source: "moon_task",
-          verified: true,
-          verification: expect.stringContaining("Verified Moon task"),
+          verified: false,
+          verification: expect.stringContaining("supplemental only"),
         }),
       ],
     });
   });
 
-  it("does not count declarative GitHub CI evidence toward the required validation profile", async () => {
+  it("does not count unresolved external CI evidence toward the required validation profile", async () => {
     const { repo, featureSha } = await fixture();
     const service = new MergeAuditService();
     const started = await start(service, repo);
@@ -232,7 +351,7 @@ describe("independent full merge audit", () => {
         coverage: fullCoverage(),
         validationEvidence: supplementalValidation(featureSha),
       }),
-    ).rejects.toThrow(/backend-verified validation evidence/);
+    ).rejects.toThrow(/independently verified GitHub Actions evidence/);
   });
 
   it("rejects unknown or stale Moon task validation references", async () => {
@@ -274,19 +393,10 @@ describe("independent full merge audit", () => {
     ).rejects.toThrow(/stale: validated fingerprint/);
   });
 
-  it("invalidates approval when either reviewed head or pinned base moves", async () => {
-    const { repo, featureSha } = await fixture();
+  it("invalidates an audit when either reviewed head or pinned base moves", async () => {
+    const { repo } = await fixture();
     const service = new MergeAuditService();
     const started = await start(service, repo);
-    await service.decide({
-      repoPath: repo,
-      runId: String(started.runId),
-      decision: "MERGE_APPROVED",
-      rationale: "Pinned revision passed the full independent review.",
-      findings: [],
-      coverage: fullCoverage(),
-      validationEvidence: await moonTaskValidation(repo, featureSha),
-    });
 
     await git(repo, "checkout", "main");
     await commitFile(repo, "base-after-audit.txt", "new base\n", "advance base");
@@ -362,9 +472,9 @@ describe("independent full merge audit", () => {
     ).rejects.toThrow(/security/);
   });
 
-  it("requires a verified validation profile strong enough for the audited risk", async () => {
-    const { repo, featureSha } = await fixture();
-    const service = new MergeAuditService();
+  it("requires a provider-verified validation profile strong enough for the audited risk", async () => {
+    const { repo, baseSha, featureSha } = await fixture();
+    const { service, evidence: fastEvidence } = githubServiceAndEvidence(featureSha, baseSha, "fast");
     const started = await start(service, repo, "security-sensitive authentication feature");
 
     expect(started).toMatchObject({
@@ -379,11 +489,11 @@ describe("independent full merge audit", () => {
         rationale: "Fast validation is insufficient for a high-risk change.",
         findings: [],
         coverage: fullCoverage(),
-        validationEvidence: await moonTaskValidation(repo, featureSha, "fast"),
+        validationEvidence: fastEvidence,
       }),
     ).rejects.toThrow(/profile release/);
 
-    const wrongShaEvidence = await moonTaskValidation(repo, featureSha, "release");
+    const wrongShaEvidence = fastEvidence.map((item) => ({ ...item, profile: "release" }));
     wrongShaEvidence[0]!.headSha = "f".repeat(40);
     await expect(
       service.decide({
@@ -398,11 +508,11 @@ describe("independent full merge audit", () => {
     ).rejects.toThrow(/does not match audited SHA/);
   });
 
-  it("rejects schema-v1 and schema-v2 audit manifests under the verified-evidence gate", async () => {
+  it("rejects schema-v1 through schema-v3 audit manifests under the provider-verified gate", async () => {
     const { repo } = await fixture();
     const service = new MergeAuditService();
 
-    for (const schemaVersion of [1, 2]) {
+    for (const schemaVersion of [1, 2, 3]) {
       const runId = `legacy-run-${schemaVersion}`;
       const artifactDir = path.join(repo, ".moon", "merge-audits", "feature-audit", runId);
       await mkdir(artifactDir, { recursive: true });
@@ -497,5 +607,135 @@ describe("independent full merge audit", () => {
     expect(context).toMatchObject({ policySourceSha: expect.any(String) });
     expect(JSON.parse(String((context.policies as { moonConfig: { content: string } }).moonConfig.content)))
       .toMatchObject({ risk: { highPathPatterns: ["^secure\\.txt$"] } });
+  });
+
+  it("accepts provider-verified GitHub Actions evidence from an unchanged pinned workflow", async () => {
+    const repo = await mkdtemp(path.join(os.tmpdir(), "project-moon-github-ci-audit-"));
+    roots.push(repo);
+    await git(repo, "init", "-b", "main");
+    await git(repo, "config", "user.name", "Moon Test");
+    await git(repo, "config", "user.email", "moon-test@example.invalid");
+    await writeFile(path.join(repo, ".git", "info", "exclude"), ".moon/\n", { flag: "a" });
+    await mkdir(path.join(repo, ".github", "workflows"), { recursive: true });
+
+    const config = {
+      schemaVersion: 1,
+      validation: {
+        profileOrder: ["fast", "normal", "release"],
+        profiles: {
+          fast: ["npm run typecheck"],
+          normal: ["npm run typecheck", "npm test"],
+          release: ["npm run typecheck", "npm test", "npm run build"],
+        },
+        riskProfiles: { low: "release", medium: "release", high: "release" },
+      },
+      risk: {
+        highPathPatterns: [],
+        mediumPathPatterns: [],
+        highKeywords: [],
+        mediumKeywords: [],
+      },
+    };
+    const workflow = `name: CI
+
+on:
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Tests
+        run: npm test
+      - name: Build
+        run: npm run build
+`;
+    await writeFile(path.join(repo, "moon.config.json"), `${JSON.stringify(config, null, 2)}\n`, "utf8");
+    await writeFile(path.join(repo, "package.json"), `${JSON.stringify({
+      scripts: { typecheck: "tsc --noEmit", test: "vitest run", build: "tsc" },
+    }, null, 2)}\n`, "utf8");
+    await writeFile(path.join(repo, ".github", "workflows", "ci.yml"), workflow, "utf8");
+    await writeFile(path.join(repo, "base.txt"), "base\n", "utf8");
+    await git(repo, "add", ".");
+    await git(repo, "commit", "-m", "base policy and CI");
+    const baseSha = await git(repo, "rev-parse", "HEAD");
+    await git(repo, "checkout", "-b", "feature/audit");
+    const featureSha = await commitFile(repo, "feature.txt", "feature\n", "feature");
+
+    const githubCommand = async (args: string[]) => {
+      const route = args[1] ?? "";
+      if (route.endsWith("/actions/runs/123")) {
+        return JSON.stringify({
+          id: 123,
+          head_sha: featureSha,
+          head_branch: "feature/audit",
+          event: "pull_request",
+          status: "completed",
+          conclusion: "success",
+          name: "CI",
+          path: ".github/workflows/ci.yml",
+          pull_requests: [{
+            number: 17,
+            head: { sha: featureSha },
+            base: { sha: baseSha },
+          }],
+        });
+      }
+      if (route.includes("/actions/runs/123/jobs")) {
+        return JSON.stringify({
+          jobs: [{
+            id: 999,
+            name: "validate",
+            status: "completed",
+            conclusion: "success",
+            head_sha: featureSha,
+            steps: [
+              { name: "Typecheck", status: "completed", conclusion: "success" },
+              { name: "Tests", status: "completed", conclusion: "success" },
+              { name: "Build", status: "completed", conclusion: "success" },
+            ],
+          }],
+        });
+      }
+      throw new Error(`unexpected gh call: ${args.join(" ")}`);
+    };
+
+    const service = new MergeAuditService({ githubCommand });
+    const started = await start(service, repo);
+    expect(started).toMatchObject({
+      risk: { requiredValidationProfile: "release" },
+    });
+
+    const decision = await service.decide({
+      repoPath: repo,
+      runId: String(started.runId),
+      decision: "MERGE_APPROVED",
+      rationale: "Trusted unchanged GitHub Actions workflow passed the release profile.",
+      findings: [],
+      coverage: fullCoverage(),
+      validationEvidence: [{
+        source: "github_ci",
+        profile: "release",
+        headSha: featureSha,
+        passed: true,
+        reference: "https://github.com/example/project/actions/runs/123/job/999",
+        summary: "Provider-verified release workflow passed.",
+      }],
+    });
+
+    expect(decision).toMatchObject({
+      decision: "MERGE_APPROVED",
+      validationSatisfied: true,
+      readyToMerge: true,
+      verifiedValidationEvidence: [
+        expect.objectContaining({
+          source: "github_ci",
+          verified: true,
+          verification: expect.stringContaining("Verified GitHub Actions run 123"),
+        }),
+      ],
+    });
   });
 });

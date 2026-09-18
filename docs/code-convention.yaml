@@ -66,5 +66,8 @@ merge_audit:
     stacks: [merge-audit, review, security]
 
   - id: MERGE-005
-    rule: MERGE_APPROVED에 필요한 validation evidence는 backend resolver가 실제 증거를 재검증한 경우에만 인정하며, 현재 moon_task는 실제 task 상태·profile·audited HEAD·repository fingerprint가 모두 일치해야 한다.
+    rule: MERGE_APPROVED에 필요한 validation evidence는 developer workspace 밖의 provider를 auditor가 직접 재검증한 경우에만 인정하며, moon_task는 일관성 점검용 보조 증거일 뿐 승인 게이트를 충족할 수 없다.
     stacks: [merge-audit, validation, task, security]
+  - id: MERGE-006
+    rule: github_ci evidence는 exact audited PR·base SHA·head SHA·branch의 pull_request run이어야 하고, 사용된 workflow가 pinned base와 audited head에서 동일하며 pinned validation profile의 모든 command가 명시적 trusted job run step으로 존재하고 성공해야 한다. npm command를 사용하면 해당 package.json script 정의도 base와 head에서 동일해야 한다.
+    stacks: [merge-audit, github, validation, security]

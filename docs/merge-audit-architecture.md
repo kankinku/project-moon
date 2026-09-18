@@ -133,9 +133,9 @@ Validation evidence records:
 - summary of checks performed
 - backend verification status and verification detail
 
-The auditor does not execute untrusted repository code itself. For `source=moon_task`, it resolves the referenced Moon task run from the audited workspace, requires a passing `VERIFIED` or `COMPLETE` validation, checks that the submitted profile/pass state matches the task record, requires repository `HEAD` to equal the audited head SHA, and recomputes the repository fingerprint to prove that the task validation still describes the exact audited workspace.
+The auditor does not execute untrusted repository code itself. `source=moon_task` may be consistency-checked against the local task manifest, state, profile, audited HEAD, and workspace fingerprint, but it remains supplemental because `.moon/tasks` is part of the developer-controlled workspace and is intentionally excluded from normal Git changes/fingerprints.
 
-`github_ci`, `external_ci`, and `moon_review` are currently supplemental evidence only. They are persisted for reviewer context but do not satisfy the risk-required validation profile until a provider-backed resolver is implemented. The later GitHub merge gate still independently requires live CI/status checks to exist and be successful.
+For `source=github_ci`, the auditor resolves the referenced GitHub Actions run through the isolated auditor GitHub account, requires a completed `pull_request` run associated with the exact audited PR, base SHA, head SHA, and branch, loads the run's workflow path, requires that workflow to be byte-identical at pinned base and audited head, maps the pinned validation profile's commands to explicitly named `run` steps in exactly one workflow job, and verifies the corresponding GitHub job and required steps succeeded. When those commands invoke npm scripts, the referenced `package.json` script definitions must also be identical at pinned base and audited head so an unchanged workflow cannot be paired with a weakened script alias. A PR therefore cannot reuse another PR's run or weaken its own CI and treat that run as trusted evidence. `moon_task`, `external_ci`, and `moon_review` remain supplemental. The later GitHub merge gate independently rechecks live CI/status checks before merge.
 
 ## Approval gate
 
@@ -145,10 +145,10 @@ The auditor does not execute untrusted repository code itself. For `source=moon_
 2. every mandatory review category is present;
 3. no category has `CONCERN`;
 4. no unresolved P1 finding remains;
-5. at least one backend-verified validation evidence item meets the risk-required profile for the exact head SHA;
+5. at least one independently verified `github_ci` evidence item meets the risk-required profile for the exact audited PR/head SHA;
 6. an evidence-based rationale is recorded.
 
-The manifest persists structured findings, coverage, resolved validation evidence, risk, rationale, and approval SHA. Approval remains valid only for the pinned target. Verified-evidence full-review manifests use schema version 3; schema versions 1 and 2 are deliberately rejected and must be recreated because their earlier approvals did not satisfy the current provenance contract.
+The manifest persists structured findings, coverage, resolved validation evidence, risk, rationale, and approval SHA. Approval remains valid only for the pinned target. Provider-verified full-review manifests use schema version 4; schema versions 1 through 3 are deliberately rejected and must be recreated because their earlier approvals did not satisfy the current independent-provider provenance contract.
 
 ## GitHub review publication
 
@@ -234,6 +234,6 @@ implementation
 - base or head movement invalidates approval;
 - full review coverage is mandatory before approval;
 - unresolved P1 findings block approval;
-- risk-required validation evidence must be backend-verified and match the exact head SHA/fingerprint;
+- risk-required validation evidence must be independently verified from GitHub Actions and bound to the exact audited PR/head plus the unchanged pinned workflow;
 - live GitHub CI and the auditor's own approval are required before merge;
 - no admin bypass is used by the merge executor.

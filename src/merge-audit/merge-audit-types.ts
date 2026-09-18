@@ -59,6 +59,7 @@ export interface MergeAuditRisk {
   reasons: string[];
   requiredValidationProfile: string;
   validationProfileOrder: string[];
+  validationProfiles: Record<string, string[]>;
 }
 
 export interface MergeAuditTarget {
@@ -67,7 +68,7 @@ export interface MergeAuditTarget {
 }
 
 export interface MergeAuditManifest {
-  schemaVersion: 3;
+  schemaVersion: 4;
   runId: string;
   repoRoot: string;
   target: MergeAuditTarget;

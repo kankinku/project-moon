@@ -5,6 +5,10 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 
+import {
+  GitHubActionsValidationResolver,
+  type GitHubActionsGhCommand,
+} from "../github/github-actions-validation-resolver.js";
 import { loadHarnessConfig } from "../task/task-config.js";
 import { TaskRepository } from "../task/task-repository.js";
 import { classifyRisk } from "../task/task-risk.js";
@@ -150,9 +154,11 @@ function validationProfileSatisfied(
 export class MergeAuditService {
   readonly #stateRoot?: string;
   readonly #taskRepository = new TaskRepository();
+  readonly #githubActions: GitHubActionsValidationResolver;
 
-  constructor(options: { stateRoot?: string } = {}) {
+  constructor(options: { stateRoot?: string; githubCommand?: GitHubActionsGhCommand } = {}) {
     this.#stateRoot = options.stateRoot ? path.resolve(options.stateRoot) : undefined;
+    this.#githubActions = new GitHubActionsValidationResolver({ command: options.githubCommand });
   }
 
   #auditRoot(repoRoot: string): string {
@@ -238,6 +244,43 @@ export class MergeAuditService {
     manifest: MergeAuditManifest,
     evidence: MergeAuditValidationEvidence,
   ): Promise<MergeAuditValidationEvidence> {
+    if (evidence.headSha !== manifest.headSha) {
+      throw new Error(
+        `Validation evidence head SHA ${evidence.headSha} does not match audited SHA ${manifest.headSha}`,
+      );
+    }
+
+    if (evidence.source === "github_ci") {
+      const profileCommands = manifest.risk.validationProfiles[evidence.profile];
+      if (!profileCommands) {
+        throw new Error(`Unknown validation profile for GitHub CI evidence: ${evidence.profile}`);
+      }
+      const resolved = await this.#githubActions.resolve({
+        repository: manifest.target.repository,
+        reference: evidence.reference,
+        expectedPullNumber: manifest.target.pullNumber,
+        expectedBaseSha: manifest.baseSha,
+        expectedHeadSha: manifest.headSha,
+        expectedHeadBranch: manifest.headBranch,
+        expectedPassed: evidence.passed,
+        profile: evidence.profile,
+        profileCommands,
+        loadWorkflow: async (workflowPath) => ({
+          baseContent: await this.#gitFileAtRef(repoRoot, manifest.baseSha, workflowPath),
+          headContent: await this.#gitFileAtRef(repoRoot, manifest.headSha, workflowPath),
+        }),
+        loadPackageJson: async () => ({
+          baseContent: await this.#gitFileAtRef(repoRoot, manifest.baseSha, "package.json"),
+          headContent: await this.#gitFileAtRef(repoRoot, manifest.headSha, "package.json"),
+        }),
+      });
+      return {
+        ...evidence,
+        verified: true,
+        verification: resolved.verification,
+      };
+    }
+
     if (evidence.source !== "moon_task") {
       return {
         ...evidence,
@@ -270,12 +313,6 @@ export class MergeAuditService {
         `Moon task evidence pass-state mismatch for ${evidence.reference}`,
       );
     }
-    if (evidence.headSha !== manifest.headSha) {
-      throw new Error(
-        `Moon task evidence head SHA ${evidence.headSha} does not match audited SHA ${manifest.headSha}`,
-      );
-    }
-
     const currentHeadSha = await this.#git(repoRoot, ["rev-parse", "HEAD"]);
     if (currentHeadSha !== manifest.headSha) {
       throw new Error(
@@ -291,9 +328,9 @@ export class MergeAuditService {
 
     return {
       ...evidence,
-      verified: true,
+      verified: false,
       verification:
-        `Verified Moon task ${evidence.reference}: state=${taskManifest.state}, profile=${validation.profile}, fingerprint=${validation.fingerprint}`,
+        `Checked Moon task ${evidence.reference}: state=${taskManifest.state}, profile=${validation.profile}, fingerprint=${validation.fingerprint}. Developer-workspace task evidence is supplemental only and cannot satisfy merge approval.`,
     };
   }
 
@@ -304,7 +341,7 @@ export class MergeAuditService {
       target?: unknown;
       risk?: unknown;
     };
-    if (raw.schemaVersion !== 3 || raw.target === undefined || raw.risk === undefined) {
+    if (raw.schemaVersion !== 4 || raw.target === undefined || raw.risk === undefined) {
       throw new Error(
         "Legacy merge audit run is incompatible with the verified-evidence full-review gate. Start a fresh audit for the current repository/PR/base/head.",
       );
@@ -382,7 +419,7 @@ export class MergeAuditService {
 
     const now = new Date().toISOString();
     const manifest: MergeAuditManifest = {
-      schemaVersion: 3,
+      schemaVersion: 4,
       runId,
       repoRoot,
       target: { repository, pullNumber: input.pullNumber },
@@ -401,6 +438,9 @@ export class MergeAuditService {
         reasons: riskAssessment.reasons,
         requiredValidationProfile,
         validationProfileOrder: [...config.validation.profileOrder],
+        validationProfiles: Object.fromEntries(
+          Object.entries(config.validation.profiles).map(([profile, commands]) => [profile, [...commands]]),
+        ),
       },
       changedFiles,
       diffStat,
@@ -523,7 +563,7 @@ export class MergeAuditService {
         moonConfig: await readPolicy("moon.config.json"),
       },
       auditorContract:
-        "Perform a full independent final review of the pinned change. Verify requirements, correctness, code quality, tests, regression risk, architecture, API contracts, security, performance, operations, and maintainability. Internal review is evidence only. Use includePaths and searchTerms on repeated merge_audit_context calls to inspect unchanged related code, callers, consumers, and tests at the exact audited head SHA when material to a verdict. Record concrete P1-P4 findings and category-by-category evidence. Do not modify or execute repository code in this credential-bearing auditor runtime. MERGE_APPROVED requires complete review coverage, zero unresolved P1 findings, sufficient passing validation evidence bound to the pinned head SHA, and unchanged base/head pins.",
+        "Perform a full independent final review of the pinned change. Verify requirements, correctness, code quality, tests, regression risk, architecture, API contracts, security, performance, operations, and maintainability. Internal review is evidence only. Use includePaths and searchTerms on repeated merge_audit_context calls to inspect unchanged related code, callers, consumers, and tests at the exact audited head SHA when material to a verdict. Record concrete P1-P4 findings and category-by-category evidence. Do not modify or execute repository code in this credential-bearing auditor runtime. MERGE_APPROVED requires complete review coverage, zero unresolved P1 findings, independently verified GitHub Actions evidence whose unchanged base workflow covers the pinned validation profile for the exact head SHA and PR, and unchanged base/head pins. Developer-workspace moon_task evidence is supplemental only.",
     };
   }
 
@@ -582,7 +622,7 @@ export class MergeAuditService {
       }
       if (!validationSatisfied) {
         throw new Error(
-          `MERGE_APPROVED requires backend-verified validation evidence at profile ${manifest.risk.requiredValidationProfile} or stronger for the audited head SHA`,
+          `MERGE_APPROVED requires independently verified GitHub Actions evidence at profile ${manifest.risk.requiredValidationProfile} or stronger for the audited PR/head SHA`,
         );
       }
     }

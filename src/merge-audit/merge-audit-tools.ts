@@ -159,7 +159,7 @@ export function registerMergeAuditTools(
         findings: z.array(finding).describe("Structured code-review findings. Unresolved P1 findings block approval."),
         coverage: z.array(coverage).describe("One evidence-backed verdict for every mandatory full-review category."),
         validationEvidence: z.array(validationEvidence).describe(
-          "Deterministic validation evidence. MERGE_APPROVED currently counts only source=moon_task evidence that the auditor resolves against an actual Moon task manifest and fresh repository fingerprint for the audited SHA; other sources are supplemental.",
+          "Deterministic validation evidence. MERGE_APPROVED counts only source=github_ci evidence independently resolved through the isolated auditor GitHub identity, exact PR/head binding, and an unchanged pinned workflow covering the required validation profile; moon_task/external_ci/moon_review remain supplemental.",
         ),
       },
       annotations: TOOL_ANNOTATIONS.destructiveNonIdempotentClosed,

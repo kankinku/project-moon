@@ -146,7 +146,7 @@ export function registerMergeAuditProxyTools(
         findings: z.array(finding).describe("Structured P1-P4 code-review findings."),
         coverage: z.array(coverage).describe("One evidence-backed verdict for every mandatory full-review category."),
         validationEvidence: z.array(validationEvidence).describe(
-          "Deterministic validation evidence bound to the audited head SHA and validation profile. Only backend-resolved source=moon_task evidence currently satisfies the approval gate; other sources are supplemental.",
+          "Deterministic validation evidence bound to the audited PR/head SHA and validation profile. Only independently resolved github_ci evidence backed by the unchanged pinned workflow may satisfy the approval gate; moon_task/external_ci/moon_review remain supplemental.",
         ),
       },
       annotations: TOOL_ANNOTATIONS.destructiveNonIdempotentClosed,
