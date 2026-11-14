@@ -1,0 +1,13 @@
+services:
+  workmachine:
+    networks:
+      default: {}
+      teller_client: {}
+      teller_database: {}
+networks:
+  teller_client:
+    external: true
+    name: teller-operations_client
+  teller_database:
+    external: true
+    name: teller-operations_database

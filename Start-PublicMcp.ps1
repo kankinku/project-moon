@@ -159,6 +159,10 @@ if ($auditorEnabled) {
     $composeArgs += @('--env-file', $auditorSecretEnv)
 }
 $composeArgs += @('-f', $composeFile)
+$tellerComposeFile = Join-Path $projectRoot 'tunneling\docker-compose.teller-network.yml'
+if (Test-Path -LiteralPath $tellerComposeFile) {
+    $composeArgs += @('-f', $tellerComposeFile)
+}
 if ($Gpu) { $composeArgs += @('-f', $gpuComposeFile) }
 if ($auditorEnabled) { $composeArgs += @('--profile', 'merge-auditor') }
 
