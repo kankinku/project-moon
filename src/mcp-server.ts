@@ -27,6 +27,7 @@ export function workflowInstructions(
   }
 
   const common =
+    "Before starting repository work, check the registered project constitution in /shared/.agent/PROJECTS.json. For task_start the verified project policies are provided in projectConstitution and task_context brief; do not confuse policy discovery with successful central DB writes or Git synchronization. The direct unrestricted tools can bypass this project gate; do not claim universal enforcement. " +
     "This server is an unrestricted remote development environment. Tools operate directly on the host with the MCP service process's full OS permissions. DIRECT and HARNESS are workflow policies, not security boundaries. Explicit user instructions to use DIRECT or HARNESS for the current request override the server default when compatible with the requested operation. Use review_* for independent reproducible code review pinned to Git commits. Final merge approval belongs to a separate merge-auditor runtime. When merge_audit_* tools are exposed here, they are private-network proxies to that isolated runtime rather than local developer authority. Poll long-running commands with read_process or write_stdin.";
 
   if (mode === "direct") {
