@@ -1,3 +1,4 @@
+import { verifyProjectConstitution } from "./project-constitution.js";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { appendFile, lstat, mkdir, readFile, readdir, readlink } from "node:fs/promises";
@@ -12,6 +13,10 @@ const MAX_POLICY_CHARS = 60_000;
 const MAX_TRACKED_FILES = 160;
 
 export class TaskRepository {
+  verifyProjectConstitution(repoPath: string) {
+    return verifyProjectConstitution(repoPath, (args) => this.git(repoPath, args));
+  }
+
   async command(executable: string, args: string[], options: { cwd?: string; timeoutMs?: number; maxBuffer?: number } = {}) {
     const result = await execFileAsync(executable, args, {
       cwd: options.cwd,
@@ -58,7 +63,7 @@ export class TaskRepository {
       Object.assign(packageScripts, pkg.scripts ?? {});
     }
     const candidatePolicies = [
-      "AGENTS.md", "docs/adr.yaml", "docs/code-convention.yaml", "docs/architecture.yaml",
+      "AGENTS.md", ".agent/CONSTITUTION.md", ".agent/PROJECT.json", "docs/adr.yaml", "docs/code-convention.yaml", "docs/architecture.yaml",
       "docs/domain-invariants.yaml", "moon.config.json",
     ];
     const policyFiles: string[] = [];

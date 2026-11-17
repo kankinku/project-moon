@@ -55,6 +55,7 @@ export class TaskService {
     const request = input.request.trim();
     if (!request) throw new Error("request must not be empty");
 
+    const projectConstitution = await this.repository.verifyProjectConstitution(repoRoot);
     const status = await this.repository.git(repoRoot, ["status", "--porcelain=v1"]);
     const dirtyAtStart = status.length > 0;
     if ((input.requireClean ?? true) && dirtyAtStart) {
@@ -122,6 +123,7 @@ export class TaskService {
       dirtyAtStart,
       risk,
       requiredValidationProfile: config.validation.riskProfiles[risk.level],
+      projectConstitution,
       discovery,
     };
   }
