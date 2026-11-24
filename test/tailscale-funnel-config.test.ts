@@ -106,7 +106,7 @@ describe("stable Tailscale Funnel deployment", () => {
     expect(compose).toContain('MCP_MERGE_AUDITOR_INTERNAL_URL: "http://merge-auditor:2999/mcp"');
     expect(compose).toContain('MCP_MERGE_AUDITOR_INTERNAL_TOKEN: "${MERGE_AUDITOR_AUTH_TOKEN:-}"');
     expect(compose).toContain('MCP_ALLOWED_HOSTS: "localhost,127.0.0.1,merge-auditor"');
-    expect(compose).toContain("source: ../shared");
+    expect(compose).toContain('source: "${SHARED_PATH:?Set SHARED_PATH in the private Moon environment}"');
     expect(compose).toContain("target: /audit/shared");
     expect(compose).toContain("read_only: true");
     expect(compose).not.toContain("MERGE_AUDITOR_PUBLIC_URL");
