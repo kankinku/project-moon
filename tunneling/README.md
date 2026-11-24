@@ -15,7 +15,7 @@ There is no tunnel container, domain purchase, DNS record, or tunnel credential 
 
 ## Docker boundary
 
-`docker-compose.local.yml` publishes Nginx only to `127.0.0.1:2999`. Tailscale Funnel proxies the host's loopback service to public HTTPS. The Docker socket is not mounted and only `shared/` is bind-mounted into the workmachine.
+`docker-compose.local.yml` publishes Nginx only to `127.0.0.1:2999`. Tailscale Funnel proxies the host's loopback service to public HTTPS. The Docker socket is not mounted and the external host directory in `SHARED_PATH` is bind-mounted into the workmachine. The local deployment refuses to start when `SHARED_PATH` is missing, empty, or only contains the generated scaffolding; this prevents a checkout-relative empty workspace from silently replacing the durable workspace.
 
 ## Local configuration
 
