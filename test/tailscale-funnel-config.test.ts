@@ -6,6 +6,12 @@ const root = process.cwd();
 const read = (relative: string) => readFileSync(join(root, relative), "utf8");
 
 describe("stable Tailscale Funnel deployment", () => {
+  test("the workmachine image installs Node.js 24 or newer", () => {
+    const dockerfile = read("tunneling/Dockerfile");
+    expect(dockerfile).toContain("https://deb.nodesource.com/setup_24.x");
+    expect(dockerfile).not.toContain("https://deb.nodesource.com/setup_22.x");
+  });
+
   test("Docker exposes only host loopback gateways and has no tunnel sidecar", () => {
     for (const file of ["tunneling/docker-compose.local.yml", "tunneling/docker-compose.yml"]) {
       const compose = read(file);
