@@ -56,6 +56,21 @@ describe("stable Tailscale Funnel deployment", () => {
     expect(startScript).not.toContain("MOON_FIXED_GATEWAY_URL");
   });
 
+  test("the public bootstrap can layer validated Teller Compose and env overrides", () => {
+    const startScript = read("Start-PublicMcp.ps1");
+    expect(startScript).toContain("[string[]]$AdditionalComposeFiles = @()");
+    expect(startScript).toContain("[string[]]$AdditionalEnvFiles = @()");
+    expect(startScript).toContain("Test-Path -LiteralPath $additionalComposeFile -PathType Leaf");
+    expect(startScript).toContain("Test-Path -LiteralPath $additionalEnvFile -PathType Leaf");
+    expect(startScript).toContain("$composeArgs += @('--env-file', $additionalEnvFile)");
+    expect(startScript).toContain("$composeArgs += @('-f', $additionalComposeFile)");
+    expect(startScript).toContain("config --format json");
+    expect(startScript).toContain("MCP_PUBLIC_URL");
+    expect(startScript).toContain("MCP_ALLOWED_HOSTS");
+    expect(startScript).toContain("MCP_OAUTH_ENABLED");
+    expect(startScript).toContain("MCP_ALLOW_NO_AUTH");
+  });
+
   test("the public stop helper removes only the 443 Funnel and stops both runtimes", () => {
     const stopScript = read("Stop-PublicMcp.ps1");
     expect(stopScript).toContain("funnel --https=443 off");

@@ -2,7 +2,9 @@
 param(
     [switch]$Gpu,
     [ValidatePattern('^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$')]
-    [string]$TailscaleHostname = 'project-moon'
+    [string]$TailscaleHostname = 'project-moon',
+    [string[]]$AdditionalComposeFiles = @(),
+    [string[]]$AdditionalEnvFiles = @()
 )
 
 $ErrorActionPreference = 'Stop'
@@ -59,6 +61,18 @@ function Set-DotEnvValue {
 
 if (-not (Test-Path -LiteralPath $localEnv)) {
     throw "Missing $localEnv. Copy tunneling/.env.local.example first."
+}
+foreach ($additionalComposeFile in $AdditionalComposeFiles) {
+    if ([string]::IsNullOrWhiteSpace($additionalComposeFile) -or
+        -not (Test-Path -LiteralPath $additionalComposeFile -PathType Leaf)) {
+        throw "Additional Compose file does not exist: $additionalComposeFile"
+    }
+}
+foreach ($additionalEnvFile in $AdditionalEnvFiles) {
+    if ([string]::IsNullOrWhiteSpace($additionalEnvFile) -or
+        -not (Test-Path -LiteralPath $additionalEnvFile -PathType Leaf)) {
+        throw "Additional environment file does not exist: $additionalEnvFile"
+    }
 }
 
 $expectedAuditorLogin = Get-DotEnvValue -Path $localEnv -Name 'MCP_GITHUB_AUDITOR_LOGIN'
@@ -138,7 +152,7 @@ if (-not $dnsName.EndsWith('.ts.net', [System.StringComparison]::OrdinalIgnoreCa
 }
 
 # OAuth identity is anchored to the exact URL reported by Funnel before Project Moon starts.
-$runtime = "MCP_PUBLIC_URL=$publicUrl`nMCP_ENDPOINT=/mcp`nMCP_OAUTH_ENABLED=true`nMCP_ALLOW_NO_AUTH=false`n"
+$runtime = "MCP_PUBLIC_URL=$publicUrl`nMCP_ENDPOINT=/mcp`nMCP_ALLOWED_HOSTS=$dnsName,localhost,127.0.0.1`nMCP_OAUTH_ENABLED=true`nMCP_ALLOW_NO_AUTH=false`n"
 [System.IO.File]::WriteAllText($publicEnv, $runtime, [System.Text.UTF8Encoding]::new($false))
 
 if ($Gpu) {
@@ -154,11 +168,18 @@ if ($Gpu) {
     }
 }
 
-$composeArgs = @('compose', '--env-file', $localEnv, '--env-file', $publicEnv)
+$composeArgs = @('compose', '--env-file', $localEnv)
+foreach ($additionalEnvFile in $AdditionalEnvFiles) {
+    $composeArgs += @('--env-file', $additionalEnvFile)
+}
+$composeArgs += @('--env-file', $publicEnv)
 if ($auditorEnabled) {
     $composeArgs += @('--env-file', $auditorSecretEnv)
 }
 $composeArgs += @('-f', $composeFile)
+foreach ($additionalComposeFile in $AdditionalComposeFiles) {
+    $composeArgs += @('-f', $additionalComposeFile)
+}
 $tellerComposeFile = Join-Path $projectRoot 'tunneling\docker-compose.teller-network.yml'
 if (Test-Path -LiteralPath $tellerComposeFile) {
     $composeArgs += @('-f', $tellerComposeFile)
@@ -166,8 +187,26 @@ if (Test-Path -LiteralPath $tellerComposeFile) {
 if ($Gpu) { $composeArgs += @('-f', $gpuComposeFile) }
 if ($auditorEnabled) { $composeArgs += @('--profile', 'merge-auditor') }
 
-docker @composeArgs config --quiet
+$composeConfigJson = docker @composeArgs config --format json
 if ($LASTEXITCODE -ne 0) { throw 'Docker Compose configuration validation failed.' }
+try {
+    $composeConfig = $composeConfigJson | ConvertFrom-Json
+} catch {
+    throw 'Docker Compose configuration did not return valid JSON.'
+}
+$workmachineEnv = $composeConfig.services.workmachine.environment
+if ([string]$workmachineEnv.MCP_PUBLIC_URL -ne $publicUrl) {
+    throw 'Docker Compose configuration lost MCP_PUBLIC_URL.'
+}
+if ([string]$workmachineEnv.MCP_OAUTH_ENABLED -ne 'true' -or
+    [string]$workmachineEnv.MCP_ALLOW_NO_AUTH -ne 'false') {
+    throw 'Docker Compose configuration does not enforce OAuth-only public access.'
+}
+$allowedHosts = ([string]$workmachineEnv.MCP_ALLOWED_HOSTS).Split(',') |
+    ForEach-Object { $_.Trim().ToLowerInvariant() }
+if ($allowedHosts -notcontains $dnsName.ToLowerInvariant()) {
+    throw "Docker Compose configuration does not allow public host $dnsName."
+}
 
 $upArgs = $composeArgs + @('up', '-d', '--build', 'workmachine')
 if ($auditorEnabled) { $upArgs += 'merge-auditor' }

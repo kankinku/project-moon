@@ -178,6 +178,10 @@ WORKMACHINE_IMAGE=project-moon-local:0.1.0
 .\Start-PublicMcp.ps1
 ```
 
+Teller 운영을 함께 시작할 때는 Teller 저장소의 `scripts/teller-public-mcp.mjs`를
+사용한다. 이 래퍼는 위 공개 시작 경로를 재사용하면서 Teller의 비공개 Compose
+오버라이드와 환경 파일만 추가한다.
+
 스크립트는 자동으로 다음 작업을 수행합니다.
 
 1. Tailscale 연결 상태 확인

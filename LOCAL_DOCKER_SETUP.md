@@ -92,6 +92,21 @@ PUBLIC_TRANSPORT=tailscale-funnel
 OAUTH_ENABLED=true
 ```
 
+### Start with the Teller network and private client mount
+
+The Teller wrapper reuses this public bootstrap and supplies Teller's private
+Compose override and environment file. It does not copy credentials into the
+Project Moon repository:
+
+```powershell
+node scripts/teller-public-mcp.mjs --project-moon-root C:\path\to\project-moon
+```
+
+The wrapper refuses to run when either repository is not exactly at
+`origin/main`, when required private files are missing, or when the merged
+Compose configuration does not preserve the public Host allowlist and
+OAuth-only settings.
+
 A background Funnel persists across device or Tailscale restarts. The ChatGPT MCP registration therefore keeps the same URL as long as this Tailscale machine identity/DNS name is retained.
 
 ## Start the independent merge auditor
