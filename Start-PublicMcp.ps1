@@ -75,6 +75,31 @@ foreach ($additionalEnvFile in $AdditionalEnvFiles) {
     }
 }
 
+$sharedPath = Get-DotEnvValue -Path $localEnv -Name 'SHARED_PATH'
+foreach ($additionalEnvFile in $AdditionalEnvFiles) {
+    $configuredSharedPath = Get-DotEnvValue -Path $additionalEnvFile -Name 'SHARED_PATH'
+    if (-not [string]::IsNullOrWhiteSpace($configuredSharedPath)) { $sharedPath = $configuredSharedPath }
+}
+if (-not [string]::IsNullOrWhiteSpace($env:SHARED_PATH)) { $sharedPath = $env:SHARED_PATH }
+if ([string]::IsNullOrWhiteSpace($sharedPath)) {
+    throw 'Missing SHARED_PATH. Moon must use the external persistent workspace, not a checkout-relative shared directory.'
+}
+try {
+    $sharedPath = [IO.Path]::GetFullPath($sharedPath)
+} catch {
+    throw "SHARED_PATH is invalid: $sharedPath"
+}
+if (-not (Test-Path -LiteralPath $sharedPath -PathType Container)) {
+    throw "Persistent Moon workspace does not exist: $sharedPath"
+}
+$workspaceEntries = Get-ChildItem -LiteralPath $sharedPath -Force
+if (-not ($workspaceEntries | Where-Object { $_.Name -eq 'AGENTS.md' -and -not $_.PSIsContainer })) {
+    throw "Persistent Moon workspace is missing AGENTS.md: $sharedPath"
+}
+if (-not ($workspaceEntries | Where-Object { $_.Name -ne 'AGENTS.md' -and $_.Name -ne 'nginx' })) {
+    throw "Persistent Moon workspace is empty or not the established workspace: $sharedPath"
+}
+
 $expectedAuditorLogin = Get-DotEnvValue -Path $localEnv -Name 'MCP_GITHUB_AUDITOR_LOGIN'
 $auditToken = if ($auditorSecretEnv) {
     Get-DotEnvValue -Path $auditorSecretEnv -Name 'MERGE_AUDITOR_AUTH_TOKEN'

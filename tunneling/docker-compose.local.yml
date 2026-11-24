@@ -29,7 +29,7 @@ services:
       MCP_DEFAULT_CWD: "/shared"
     volumes:
       - type: bind
-        source: ../shared
+        source: "${SHARED_PATH:?Set SHARED_PATH in the private Moon environment}"
         target: /shared
       - type: volume
         source: project-moon-local-state
@@ -64,7 +64,7 @@ services:
       GH_CONFIG_DIR: "/var/lib/project-moon/gh"
     volumes:
       - type: bind
-        source: ../shared
+        source: "${SHARED_PATH:?Set SHARED_PATH in the private Moon environment}"
         target: /audit/shared
         read_only: true
       - type: volume
