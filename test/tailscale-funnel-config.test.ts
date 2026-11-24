@@ -6,6 +6,12 @@ const root = process.cwd();
 const read = (relative: string) => readFileSync(join(root, relative), "utf8");
 
 describe("stable Tailscale Funnel deployment", () => {
+  test("the workmachine image installs Node.js 24 or newer", () => {
+    const dockerfile = read("tunneling/Dockerfile");
+    expect(dockerfile).toContain("https://deb.nodesource.com/setup_24.x");
+    expect(dockerfile).not.toContain("https://deb.nodesource.com/setup_22.x");
+  });
+
   test("Docker exposes only host loopback gateways and has no tunnel sidecar", () => {
     for (const file of ["tunneling/docker-compose.local.yml", "tunneling/docker-compose.yml"]) {
       const compose = read(file);
@@ -54,6 +60,21 @@ describe("stable Tailscale Funnel deployment", () => {
     expect(startScript).not.toContain("8443");
     expect(startScript).not.toContain("cloudflared");
     expect(startScript).not.toContain("MOON_FIXED_GATEWAY_URL");
+  });
+
+  test("the public bootstrap can layer validated Teller Compose and env overrides", () => {
+    const startScript = read("Start-PublicMcp.ps1");
+    expect(startScript).toContain("[string[]]$AdditionalComposeFiles = @()");
+    expect(startScript).toContain("[string[]]$AdditionalEnvFiles = @()");
+    expect(startScript).toContain("Test-Path -LiteralPath $additionalComposeFile -PathType Leaf");
+    expect(startScript).toContain("Test-Path -LiteralPath $additionalEnvFile -PathType Leaf");
+    expect(startScript).toContain("$composeArgs += @('--env-file', $additionalEnvFile)");
+    expect(startScript).toContain("$composeArgs += @('-f', $additionalComposeFile)");
+    expect(startScript).toContain("config --format json");
+    expect(startScript).toContain("MCP_PUBLIC_URL");
+    expect(startScript).toContain("MCP_ALLOWED_HOSTS");
+    expect(startScript).toContain("MCP_OAUTH_ENABLED");
+    expect(startScript).toContain("MCP_ALLOW_NO_AUTH");
   });
 
   test("the public stop helper removes only the 443 Funnel and stops both runtimes", () => {
