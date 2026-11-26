@@ -47,11 +47,17 @@ describe("runtime role tool isolation", () => {
     const tools = await listToolsFor({ MCP_RUNTIME_ROLE: "developer" });
 
     expect(tools).toHaveLength(32);
+    expect(tools).not.toContain("provider_metadata_probe");
     expect(tools).toContain("exec_command");
     expect(tools).toContain("review_start");
     expect(tools).not.toContain("merge_audit_start");
     expect(tools).not.toContain("merge_audit_merge");
     expect(tools).not.toContain("merge_auditor_auth_start");
+  });
+
+  it("requires opt-in and built-in authentication for the developer metadata probe", async () => {
+    expect(await listToolsFor({ MCP_PROVIDER_METADATA_PROBE: "true" })).toContain("provider_metadata_probe");
+    expect(await listToolsFor({ MCP_PROVIDER_METADATA_PROBE: "true", MCP_AUTH_TOKEN: "", MCP_ALLOW_NO_AUTH: "true" })).not.toContain("provider_metadata_probe");
   });
 
   it("exposes merge workflow proxies from the single public Moon without exposing auditor auth tools", async () => {
@@ -82,6 +88,7 @@ describe("runtime role tool isolation", () => {
     const tools = await listToolsFor({
       MCP_RUNTIME_ROLE: "merge-auditor",
       MCP_MERGE_AUDIT_ENABLED: "true",
+      MCP_PROVIDER_METADATA_PROBE: "true",
     });
 
     expect(tools).toEqual([

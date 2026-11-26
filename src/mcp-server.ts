@@ -13,6 +13,7 @@ import { registerMergeAuditProxyTools } from "./merge-audit/merge-audit-proxy-to
 import { MergeAuditService } from "./merge-audit/merge-audit-service.js";
 import { registerMergeAuditTools } from "./merge-audit/merge-audit-tools.js";
 import { ProcessManager } from "./process-manager.js";
+import { ProviderMetadataProbe, registerProviderMetadataProbe } from "./provider-metadata-probe.js";
 import { ReviewService } from "./review/review-service.js";
 import { registerReviewTools } from "./review/review-tools.js";
 import { TaskService } from "./task/task-service.js";
@@ -40,6 +41,7 @@ export function workflowInstructions(
 
 export interface McpServices {
   processManager: ProcessManager;
+  providerMetadataProbe: ProviderMetadataProbe;
   fileService: FileService;
   reviewService: ReviewService;
   taskService: TaskService;
@@ -52,6 +54,7 @@ export interface McpServices {
 
 export function createServices(config: AppConfig): McpServices {
   return {
+    providerMetadataProbe: new ProviderMetadataProbe(),
     processManager: new ProcessManager({
       maxRetainedOutputBytes: config.maxRetainedProcessOutputBytes,
       processRetentionMs: config.processRetentionMs,
@@ -114,6 +117,9 @@ export function createMcpServer(config: AppConfig, services: McpServices): McpSe
     return server;
   }
 
+  if (config.providerMetadataProbeEnabled && (config.authToken || config.oauthEnabled)) {
+    registerProviderMetadataProbe(server, config, services.providerMetadataProbe);
+  }
   registerExecTools(server, config, services.processManager, services.fileService);
   registerFileTools(server, config, services.fileService);
   registerTaskTools(server, config, services.taskService);
