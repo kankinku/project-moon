@@ -895,6 +895,7 @@ npx vitest run test/all-tools.integration.test.ts
 | `MCP_OAUTH_REFRESH_TOKEN_TTL_SECONDS` | `2592000` | Refresh Token 수명 |
 | `MCP_OAUTH_AUTHORIZATION_CODE_TTL_SECONDS` | `300` | Authorization Code 수명 |
 | `MCP_WORKFLOW_MODE` | `auto` | 기본 작업 정책: `auto`, `direct`, `harness` |
+| `MCP_PROVIDER_METADATA_PROBE` | `false` | 임시 MCP 클라이언트 메타데이터 진단 활성화(인증된 developer 전용, provider 증빙 아님) |
 | `MCP_DEFAULT_CWD` | 서버 시작 위치 | 상대경로 기준 디렉터리 |
 | `MCP_DEFAULT_SHELL` | `$SHELL` 또는 `/bin/bash` | 기본 셸 |
 | `MCP_MAX_REQUEST_BODY` | `8mb` | HTTP 요청 크기 제한 |

@@ -29,6 +29,7 @@ export interface AppConfig {
   maxProcesses: number;
   maxFileChunkBytes: number;
   maxEditFileBytes: number;
+  providerMetadataProbeEnabled: boolean;
   workflowMode: WorkflowMode;
   runtimeRole: RuntimeRole;
   mergeAuditEnabled: boolean;
@@ -238,6 +239,7 @@ export function loadConfig(
       "MCP_MAX_EDIT_FILE_BYTES",
       4096,
     ),
+    providerMetadataProbeEnabled: parseBoolean(env.MCP_PROVIDER_METADATA_PROBE, false),
     workflowMode: parseWorkflowMode(env.MCP_WORKFLOW_MODE),
     runtimeRole: parseRuntimeRole(env.MCP_RUNTIME_ROLE),
     mergeAuditEnabled: parseBoolean(env.MCP_MERGE_AUDIT_ENABLED, false),

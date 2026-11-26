@@ -600,6 +600,7 @@ This test executes real commands and creates/modifies/deletes files on the targe
 | `MCP_OAUTH_REFRESH_TOKEN_TTL_SECONDS` | `2592000` | Refresh-token lifetime |
 | `MCP_OAUTH_AUTHORIZATION_CODE_TTL_SECONDS` | `300` | One-time authorization-code lifetime |
 | `MCP_WORKFLOW_MODE` | `auto` | Default workflow policy: `auto`, `direct`, or `harness` |
+| `MCP_PROVIDER_METADATA_PROBE` | `false` | Opt-in temporary MCP metadata diagnostic (authenticated developer only; not provider proof) |
 | `MCP_DEFAULT_CWD` | server startup directory | Base directory for relative filesystem/command paths |
 | `MCP_DEFAULT_SHELL` | `$SHELL` or `/bin/bash` | Default shell for `exec_command` |
 | `MCP_MAX_REQUEST_BODY` | `8mb` | HTTP request-body limit |
